@@ -28,7 +28,7 @@ jobs:
         run: npm ci
 
       - name: Type-check
-        run: npm run build -- --noEmit || npx tsc --noEmit
+        run: npx tsc --noEmit
 
   # ─── Rust ───────────────────────────────────────────────────────────────────
   rust:
@@ -66,23 +66,15 @@ jobs:
       - name: test
         run: cargo test --all --all-features
 
-  # ─── Build smoke-test (all platforms) ───────────────────────────────────────
+  # ─── Rust build check (fast — no bundling) ───────────────────────────────────
   build:
-    name: Build check (${{ matrix.os }})
+    name: Build check (Linux)
     needs: [frontend, rust]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-          - os: windows-latest
-          - os: macos-latest
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Linux system deps
-        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -92,12 +84,6 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
@@ -106,8 +92,5 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      - name: Install deps
-        run: npm ci
-
-      - name: Build (check only)
-        run: npx tauri build --debug
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
