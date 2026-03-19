@@ -3,10 +3,7 @@ Cargo.lock
 .ted.toml
 *.log
 
-# Website release artifacts — managed by workflow, not git
-web/downloads/*.dmg
-web/downloads/*.exe
-web/downloads/*.msi
-web/downloads/*.AppImage
-web/downloads/*.deb
+# Website release artifacts — served from nova_web, never committed here
+web/downloads/
 web/latest.json
+web/.synced_tag
