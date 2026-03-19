@@ -2,11 +2,11 @@
 
 A code editor built on Tauri 2, React 19, and CodeMirror 6. Native binary, no Electron, no Chromium.
 
-[![Release](https://img.shields.io/github/v/release/mugiwaraluffy56/nova-editor?style=flat-square&color=0f0f0f&labelColor=1a1a1a)](https://github.com/mugiwaraluffy56/nova-editor/releases)
-[![Build](https://img.shields.io/github/actions/workflow/status/mugiwaraluffy56/nova-editor/release.yml?style=flat-square&label=build&color=0f0f0f&labelColor=1a1a1a)](https://github.com/mugiwaraluffy56/nova-editor/actions/workflows/release.yml)
-[![License](https://img.shields.io/badge/license-MIT-0f0f0f?style=flat-square&labelColor=1a1a1a)](./LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0f0f0f?style=flat-square&labelColor=1a1a1a)](https://nova-code-editor.vercel.app)
-[![Tauri](https://img.shields.io/badge/built%20with-Tauri%202-0f0f0f?style=flat-square&labelColor=1a1a1a)](https://tauri.app)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-555?style=flat-square)](https://nova-code-editor.vercel.app)
+[![Tauri](https://img.shields.io/badge/tauri-2-24C8DB?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
+[![Rust](https://img.shields.io/badge/rust-stable-orange?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![React](https://img.shields.io/badge/react-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev)
 
 [Website](https://nova-code-editor.vercel.app) [Manual](https://nova-code-editor.vercel.app/manual.html) [Releases](https://github.com/mugiwaraluffy56/nova-editor/releases)
 
