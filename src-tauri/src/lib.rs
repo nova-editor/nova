@@ -186,6 +186,7 @@ pub fn run() {
             git::git_commit_files,
             git::git_ahead_behind,
             git::git_last_commit_message,
+            git::git_graph,
             // PTY / Terminal
             pty::pty_spawn,
             pty::pty_write,

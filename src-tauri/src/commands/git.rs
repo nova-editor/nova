@@ -354,3 +354,121 @@ pub async fn git_last_commit_message(repo_path: String) -> Result<String, String
         repo_path,
     ).await.map(|s| s.trim().to_string())
 }
+
+// ── Graph visualizer ──────────────────────────────────────────────────────────
+
+/// A single commit node for the branch graph view.
+/// Includes full parent OIDs (for edge routing) and all refs pointing here.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GraphCommit {
+    pub oid:      String,        // 7-char abbreviated hash
+    pub full_oid: String,        // full 40-char hash (used for parent matching)
+    pub parents:  Vec<String>,   // full OIDs of parent commits
+    pub refs:     Vec<String>,   // branch/tag names that point to this commit
+    pub message:  String,
+    pub author:   String,
+    pub time:     i64,
+}
+
+/// Return up to `limit` commits with graph metadata needed to render the
+/// branch graph (parents, ref labels).  All commits reachable from all local
+/// branch tips are included so the graph is complete across all branches.
+#[tauri::command]
+pub async fn git_graph(repo_path: String, limit: usize) -> Result<Vec<GraphCommit>, String> {
+    let repo = open_repo(&repo_path)?;
+    let git_repo = &repo.repo;
+
+    // ── Build oid → ref-names map ─────────────────────────────────────────
+    let mut ref_map: std::collections::HashMap<git2::Oid, Vec<String>> = std::collections::HashMap::new();
+
+    // Local branches
+    if let Ok(branches) = git_repo.branches(Some(git2::BranchType::Local)) {
+        for entry in branches.flatten() {
+            let (branch, _) = entry;
+            let name = match branch.name() {
+                Ok(Some(n)) => n.to_string(),
+                _ => continue,
+            };
+            if let Ok(Some(target)) = branch.get().resolve().map(|r| r.target()) {
+                ref_map.entry(target).or_default().push(name);
+            }
+        }
+    }
+
+    // Remote branches
+    if let Ok(branches) = git_repo.branches(Some(git2::BranchType::Remote)) {
+        for entry in branches.flatten() {
+            let (branch, _) = entry;
+            let name = match branch.name() {
+                Ok(Some(n)) => n.to_string(),
+                _ => continue,
+            };
+            if let Ok(Some(target)) = branch.get().resolve().map(|r| r.target()) {
+                ref_map.entry(target).or_default().push(name);
+            }
+        }
+    }
+
+    // Tags (dereference annotated tags to their commit)
+    let _ = git_repo.tag_foreach(|oid, name_bytes| {
+        let name = std::str::from_utf8(name_bytes)
+            .unwrap_or("")
+            .trim_start_matches("refs/tags/");
+        let target_oid = git_repo
+            .find_tag(oid)
+            .ok()
+            .and_then(|t| t.target().ok())
+            .map(|o| o.id())
+            .unwrap_or(oid);
+        ref_map
+            .entry(target_oid)
+            .or_default()
+            .push(format!("tag: {}", name));
+        true
+    });
+
+    // HEAD (prepend so it sorts first in the refs list)
+    let head_oid = git_repo.head().ok().and_then(|h| h.target());
+    if let Some(hoid) = head_oid {
+        ref_map.entry(hoid).or_default().insert(0, "HEAD".to_string());
+    }
+
+    // ── Walk all branch tips so we don't miss commits on non-HEAD branches ─
+    let mut revwalk = git_repo.revwalk().map_err(|e| e.to_string())?;
+    revwalk
+        .set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)
+        .map_err(|e| e.to_string())?;
+
+    // Push every local branch tip
+    if let Ok(branches) = git_repo.branches(Some(git2::BranchType::Local)) {
+        for entry in branches.flatten() {
+            let (branch, _) = entry;
+            if let Ok(Some(oid)) = branch.get().resolve().map(|r| r.target()) {
+                let _ = revwalk.push(oid);
+            }
+        }
+    }
+    // Fallback: at least push HEAD
+    if let Some(hoid) = head_oid {
+        let _ = revwalk.push(hoid);
+    }
+
+    // ── Collect commits ───────────────────────────────────────────────────
+    let mut out = Vec::new();
+    for item in revwalk.take(limit) {
+        let oid = item.map_err(|e| e.to_string())?;
+        let commit = git_repo.find_commit(oid).map_err(|e| e.to_string())?;
+        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
+        let refs = ref_map.remove(&oid).unwrap_or_default();
+        out.push(GraphCommit {
+            oid:      format!("{:.7}", oid),
+            full_oid: oid.to_string(),
+            parents,
+            refs,
+            message:  commit.summary().unwrap_or("").to_string(),
+            author:   commit.author().name().unwrap_or("unknown").to_string(),
+            time:     commit.time().seconds(),
+        });
+    }
+    Ok(out)
+}

@@ -14,13 +14,14 @@ import {
   GitBranch, Plus, Minus, Check, GitCommit as CommitIcon,
   RefreshCw, GitMerge, Trash2, RotateCcw, ChevronDown,
   ChevronRight, ChevronsUp, ChevronsDown, Layers, ArrowUp,
-  ArrowDown, FileText, AlertCircle,
+  ArrowDown, FileText, AlertCircle, GitGraph as GraphIcon,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store";
+import { GitGraph } from "./GitGraph";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type Tab = "changes" | "stash" | "log" | "branches";
+type Tab = "changes" | "stash" | "log" | "branches" | "graph";
 
 interface GitCommit {
   oid:     string;
@@ -752,12 +753,13 @@ export function GitPanel() {
     { id: "stash",    label: "Stash"                },
     { id: "log",      label: "Log"                  },
     { id: "branches", label: "Branches"             },
+    { id: "graph",    label: "Graph"                },
   ];
 
   return (
     <div
       className="flex flex-col border-l border-editor-border overflow-hidden text-xs font-mono"
-      style={{ width: 280, background: "rgb(var(--c-sidebar) / var(--surface-alpha, 1))" }}
+      style={{ width: tab === "graph" ? 360 : 280, background: "rgb(var(--c-sidebar) / var(--surface-alpha, 1))", transition: "width 150ms ease" }}
     >
       {/* Branch header */}
       <div className="flex items-center gap-1.5 px-3 py-2 border-b border-editor-border shrink-0">
@@ -794,6 +796,7 @@ export function GitPanel() {
       {tab === "stash"    && <StashTab />}
       {tab === "log"      && <LogTab />}
       {tab === "branches" && <BranchesTab />}
+      {tab === "graph"    && <GitGraph />}
     </div>
   );
 }
