@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState } from "react";
-import { X, ImageIcon, Trash2, Save, Play } from "lucide-react";
+import { X, ImageIcon, Trash2, Save, Play, RefreshCw, Download, CheckCircle, AlertCircle } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useStore, Settings, DEFAULT_SETTINGS, DEFAULT_BACKGROUND } from "../store";
 import { THEME_OPTIONS } from "../theme/themes";
 
@@ -100,6 +102,211 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <p className="text-2xs font-semibold tracking-[0.12em] uppercase text-editor-comment/60 mb-2 mt-1">
       {children}
     </p>
+  );
+}
+
+// ── Update types ─────────────────────────────────────────────────────────────
+
+type UpdateState = "idle" | "checking" | "up-to-date" | "available" | "downloading" | "done" | "error";
+
+interface UpdateInfo {
+  version: string;
+  current_version: string;
+  body?: string;
+  date?: string;
+}
+
+interface DownloadProgress {
+  downloaded: number;
+  total?: number;
+}
+
+// ── Updates section ───────────────────────────────────────────────────────────
+
+function UpdatesSection() {
+  const [appVersion, setAppVersion]           = useState<string>("…");
+  const [updateState, setUpdateState]         = useState<UpdateState>("idle");
+  const [updateInfo, setUpdateInfo]           = useState<UpdateInfo | null>(null);
+  const [progress, setProgress]               = useState<DownloadProgress | null>(null);
+  const [errorMsg, setErrorMsg]               = useState<string>("");
+
+  useEffect(() => {
+    invoke<string>("get_app_version").then(setAppVersion).catch(() => {});
+  }, []);
+
+  const checkForUpdates = async () => {
+    setUpdateState("checking");
+    setUpdateInfo(null);
+    setProgress(null);
+    setErrorMsg("");
+    try {
+      const info = await invoke<UpdateInfo | null>("check_update");
+      if (info) {
+        setUpdateInfo(info);
+        setUpdateState("available");
+      } else {
+        setUpdateState("up-to-date");
+      }
+    } catch (e) {
+      setErrorMsg(String(e));
+      setUpdateState("error");
+    }
+  };
+
+  const installUpdate = async () => {
+    setUpdateState("downloading");
+    setProgress({ downloaded: 0 });
+    const unlisten = await listen<DownloadProgress>("update://progress", (ev) => {
+      setProgress(ev.payload);
+    });
+    try {
+      await invoke("install_update");
+      setUpdateState("done");
+    } catch (e) {
+      setErrorMsg(String(e));
+      setUpdateState("error");
+    } finally {
+      unlisten();
+    }
+  };
+
+  const percent =
+    progress && progress.total && progress.total > 0
+      ? Math.round((progress.downloaded / progress.total) * 100)
+      : null;
+
+  const formatBytes = (b: number) =>
+    b < 1024 * 1024 ? `${(b / 1024).toFixed(1)} KB` : `${(b / (1024 * 1024)).toFixed(1)} MB`;
+
+  return (
+    <div>
+      <SectionLabel>Updates</SectionLabel>
+      <div className="rounded-lg border border-editor-border/30 overflow-hidden">
+
+        {/* Version row */}
+        <div className="flex items-center justify-between gap-4 px-3 py-2.5 border-b border-editor-border/20">
+          <span className="text-xs text-editor-comment">Current version</span>
+          <span className="text-xs font-mono text-editor-fg">v{appVersion}</span>
+        </div>
+
+        {/* Status + action */}
+        <div className="p-3 space-y-3">
+
+          {/* idle / up-to-date / error — show check button */}
+          {(updateState === "idle" || updateState === "up-to-date" || updateState === "error") && (
+            <button
+              onClick={checkForUpdates}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-editor-fg
+                         bg-editor-bg border border-editor-border/60 hover:border-editor-accent/50
+                         transition-colors w-full justify-center"
+            >
+              <RefreshCw size={11} />
+              Check for updates
+            </button>
+          )}
+
+          {/* checking spinner */}
+          {updateState === "checking" && (
+            <div className="flex items-center gap-2 justify-center py-1">
+              <RefreshCw size={11} className="animate-spin text-editor-accent" />
+              <span className="text-xs text-editor-comment">Checking…</span>
+            </div>
+          )}
+
+          {/* up to date */}
+          {updateState === "up-to-date" && (
+            <div className="flex items-center gap-2 justify-center py-1">
+              <CheckCircle size={11} className="text-green-400" />
+              <span className="text-xs text-editor-comment">You're on the latest version</span>
+            </div>
+          )}
+
+          {/* update available */}
+          {(updateState === "available") && updateInfo && (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Download size={11} className="text-editor-accent" />
+                  <span className="text-xs text-editor-accent font-semibold">
+                    v{updateInfo.version} available
+                  </span>
+                </div>
+                {updateInfo.date && (
+                  <span className="text-2xs text-editor-comment/60">
+                    {new Date(updateInfo.date).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+
+              {updateInfo.body && (
+                <div className="rounded-md bg-editor-bg/60 border border-editor-border/20 px-2.5 py-2 max-h-28 overflow-y-auto">
+                  <pre className="text-2xs text-editor-comment whitespace-pre-wrap leading-relaxed font-mono">
+                    {updateInfo.body}
+                  </pre>
+                </div>
+              )}
+
+              <button
+                onClick={installUpdate}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-white
+                           bg-editor-accent/80 hover:bg-editor-accent transition-colors w-full justify-center"
+              >
+                <Download size={11} />
+                Install update
+              </button>
+            </div>
+          )}
+
+          {/* downloading progress */}
+          {updateState === "downloading" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Download size={11} className="text-editor-accent animate-bounce" />
+                  <span className="text-xs text-editor-comment">Downloading…</span>
+                </div>
+                {progress && (
+                  <span className="text-2xs font-mono text-editor-comment">
+                    {formatBytes(progress.downloaded)}
+                    {progress.total ? ` / ${formatBytes(progress.total)}` : ""}
+                  </span>
+                )}
+              </div>
+              <div className="w-full h-1 rounded-full bg-editor-border/30 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: percent !== null ? `${percent}%` : "30%",
+                    background: "rgb(var(--c-accent))",
+                    animation: percent === null ? "pulse 1s ease-in-out infinite" : undefined,
+                  }}
+                />
+              </div>
+              {percent !== null && (
+                <p className="text-2xs text-editor-comment/60 text-right">{percent}%</p>
+              )}
+            </div>
+          )}
+
+          {/* done — app will relaunch */}
+          {updateState === "done" && (
+            <div className="flex items-center gap-2 justify-center py-1">
+              <CheckCircle size={11} className="text-green-400" />
+              <span className="text-xs text-editor-comment">Update installed — relaunching…</span>
+            </div>
+          )}
+
+          {/* error */}
+          {updateState === "error" && (
+            <div className="flex items-start gap-2 rounded-md bg-red-500/8 border border-red-500/20 px-2.5 py-2">
+              <AlertCircle size={11} className="text-red-400 mt-0.5 shrink-0" />
+              <span className="text-2xs text-red-400 leading-relaxed break-all">{errorMsg}</span>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -385,6 +592,9 @@ export function SettingsPanel() {
               )}
             </div>
           </div>
+
+          {/* ── Updates ── */}
+          <UpdatesSection />
 
           {/* ── Presets ── */}
           <div>

@@ -17,9 +17,11 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri        = { version = "2", features = [] }
 portable-pty = "0.8"
-tauri-plugin-shell  = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-fs     = "2"
+tauri-plugin-shell    = "2"
+tauri-plugin-dialog   = "2"
+tauri-plugin-fs       = "2"
+tauri-plugin-updater  = "2"
+tauri-plugin-process  = "2"
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 tokio       = { workspace = true }

@@ -16,6 +16,7 @@
     "fs:allow-stat",
     "fs:allow-remove",
     "fs:scope-home-recursive",
-    "fs:scope-app-recursive"
+    "fs:scope-app-recursive",
+    "updater:default"
   ]
 }

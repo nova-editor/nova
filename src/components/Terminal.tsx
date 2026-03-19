@@ -485,6 +485,14 @@ export function Terminal({ visible }: TerminalProps) {
   const [splitId,      setSplitId]      = useState<string | null>(null);
   // splitFocused: whether keyboard focus is in the right split pane.
   const [splitFocused, setSplitFocused] = useState(false);
+
+  // Stable refs so callbacks can always read current values without stale closures.
+  const splitIdRef      = useRef<string | null>(null);
+  const mainActiveIdRef = useRef<string>("");
+  const sessionsRef     = useRef<Session[]>([]);
+  splitIdRef.current      = splitId;
+  mainActiveIdRef.current = mainActiveId;
+  sessionsRef.current     = sessions;
   const [height,       setHeight]       = useState(260);
   const [maximized,    setMaximized]    = useState(false);
   const [renamingId,   setRenamingId]   = useState<string | null>(null);
@@ -511,10 +519,12 @@ export function Terminal({ visible }: TerminalProps) {
     invoke<string[]>("get_shells").then(setShells).catch(() => setShells(["/bin/zsh"]));
   }, []);
 
-  // Create initial session after shells load
+  // Create initial session after shells load — guarded by a ref so it runs exactly once
+  // even if `shells` changes identity (e.g. React Strict Mode double-invoke).
+  const hasCreatedInitial = useRef(false);
   useEffect(() => {
-    if (shells.length === 0) return;
-    if (sessions.length > 0) return;
+    if (hasCreatedInitial.current || shells.length === 0) return;
+    hasCreatedInitial.current = true;
     const id = crypto.randomUUID();
     const s: Session = { id, shell: shells[0], label: "", title: "", cwd: "", exitCode: null };
     setSessions([s]);
@@ -533,10 +543,20 @@ export function Terminal({ visible }: TerminalProps) {
 
   const addSession = useCallback((shell?: string) => {
     const s = makeSession(shell);
-    setSessions((p) => [...p, s]);
+    const currentSplitId = splitIdRef.current;
+    // When there's a split open, remove that session entirely so it doesn't
+    // become a zombie hidden tab. Its TerminalPane will unmount → cleanup kills PTY.
+    setSessions((p) => {
+      const base = currentSplitId ? p.filter((x) => x.id !== currentSplitId) : p;
+      return [...base, s];
+    });
+    if (currentSplitId) {
+      setSearchAddons((p) => { const n = { ...p }; delete n[currentSplitId]; return n; });
+      delete termRef_map.current[currentSplitId];
+      setSplitId(null);
+      setSplitFocused(false);
+    }
     setMainActiveId(s.id);
-    setSplitId(null);
-    setSplitFocused(false);
     return s.id;
   }, [makeSession]);
 
@@ -548,36 +568,68 @@ export function Terminal({ visible }: TerminalProps) {
     setSplitFocused(true);
   }, [makeSession]);
 
+  // Flag set by removeSession when the last session is closed; a separate effect
+  // calls toggle() outside of the setSessions updater (safe for Concurrent mode).
+  const shouldClosePanel = useRef(false);
+  useEffect(() => {
+    if (shouldClosePanel.current) { shouldClosePanel.current = false; toggle(); }
+  });
+
   const removeSession = useCallback((id: string) => {
-    // Remove from the term instance map; pty_kill will be called by TerminalPane's cleanup.
     delete termRef_map.current[id];
     setSearchAddons((p) => { const next = { ...p }; delete next[id]; return next; });
+
+    // Capture current values via refs so this callback never goes stale.
+    const curSplitId      = splitIdRef.current;
+    const curMainActiveId = mainActiveIdRef.current;
+
     setSessions((prev) => {
       const next = prev.filter((s) => s.id !== id);
-      if (next.length === 0) { toggle(); return prev; }
-      if (id === splitId) {
+
+      if (next.length === 0) {
+        // Last session closed — close the panel after this render.
+        shouldClosePanel.current = true;
+        return prev; // keep sessions so the pane doesn't flash empty before toggle
+      }
+
+      if (id === curSplitId) {
+        // Closed the split pane
         setSplitId(null);
         setSplitFocused(false);
-      } else if (id === mainActiveId) {
-        const remaining = next.filter((s) => s.id !== splitId);
-        setMainActiveId(remaining.at(-1)?.id ?? next[0].id);
+      } else if (id === curMainActiveId) {
+        // Closed the active main tab — pick next tab (exclude split from candidates)
+        const nonSplit = next.filter((s) => s.id !== curSplitId);
+        if (nonSplit.length > 0) {
+          setMainActiveId(nonSplit.at(-1)!.id);
+        } else if (curSplitId) {
+          // Only the split remains — promote it to main and close split
+          setMainActiveId(curSplitId);
+          setSplitId(null);
+          setSplitFocused(false);
+        }
       }
       return next;
     });
-  }, [mainActiveId, splitId, toggle]);
+  // deps are empty: all state is read via refs
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateSession = useCallback((id: string, patch: Partial<Session>) => {
     setSessions((p) => p.map((s) => s.id === id ? { ...s, ...patch } : s));
   }, []);
 
-  // New workspace → new session
+  // New workspace → new session.
+  // sessions.length is intentionally NOT a dep — it caused the effect to re-fire
+  // every time a session was added, which triggered spurious second sessions on startup.
+  // We use sessionsRef to read the current count without making it a dependency.
   const prevRoot = useRef("");
   useEffect(() => {
-    if (!workspaceRoot || sessions.length === 0) return;
+    if (!workspaceRoot) return;
     const changed = prevRoot.current !== "" && prevRoot.current !== workspaceRoot;
     prevRoot.current = workspaceRoot;
-    if (changed) addSession();
-  }, [workspaceRoot, addSession, sessions.length]);
+    if (changed && sessionsRef.current.length > 0) addSession();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceRoot, addSession]);
 
   // nova:new-terminal event (Cmd+T from keyboard handler inside pane)
   useEffect(() => {
@@ -892,7 +944,7 @@ export function Terminal({ visible }: TerminalProps) {
                 </span>
                 <button
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => { setSplitId(null); setSplitFocused(false); removeSession(splitSession.id); }}
+                  onClick={() => removeSession(splitSession.id)}
                   className="text-editor-comment hover:text-editor-red transition-colors"
                 >
                   <X size={9} />
@@ -918,7 +970,7 @@ export function Terminal({ visible }: TerminalProps) {
                 onCwd={(d) => updateSession(splitSession.id, { cwd: d })}
                 onExitCode={(c) => updateSession(splitSession.id, { exitCode: c })}
                 onZoom={zoom}
-                onClose={() => { setSplitId(null); setSplitFocused(false); removeSession(splitSession.id); }}
+                onClose={() => removeSession(splitSession.id)}
                 onSplit={() => { /* nested split not supported */ }}
               />
             </div>

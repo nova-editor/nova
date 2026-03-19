@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nova — Manual</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:      #0a0a0a;
+      --surface: #131313;
+      --raised:  #1c1c1c;
+      --border:  rgba(255,255,255,0.09);
+      --bhi:     rgba(255,255,255,0.16);
+      --accent:  #ffffff;
+      --alo:     rgba(255,255,255,0.05);
+      --fg:      #a0a0a0;
+      --fgb:     #f0ede8;
+      --fgm:     #6a6a6a;
+      --fgd:     #3a3a3a;
+      --green:   #1DB954;
+      --purple:  #b57dd4;
+      --yellow:  #c9a84c;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font-family: 'Inter', sans-serif; font-size: 14px; line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+    code {
+      font-family: 'JetBrains Mono', monospace; font-size: .8em;
+      background: var(--raised); padding: 1px 5px; border-radius: 3px;
+      border: 1px solid var(--border); color: var(--fgb);
+    }
+    kbd {
+      font-family: 'JetBrains Mono', monospace; font-size: .6rem;
+      padding: 1px 5px; border-radius: 3px;
+      background: var(--raised); border: 1px solid var(--bhi);
+      color: var(--fg); box-shadow: 0 1px 0 var(--border);
+    }
+
+    /* NAV */
+    body {
+      background-image: radial-gradient(rgba(255,255,255,.028) 1px, transparent 1px);
+      background-size: 26px 26px;
+    }
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: 48px; display: flex; align-items: center; padding: 0 1.5rem;
+      background: rgba(8,8,8,0.9); backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--border);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 7px; }
+    .nav-brand-mark { font-size: 1.1rem; color: var(--fgb); line-height: 1; font-family: 'Hiragino Sans', 'Yu Gothic', 'Noto Sans JP', sans-serif; }
+    .nav-brand-name { font-size: .82rem; font-weight: 500; color: var(--fgb); }
+    .nav-sep { color: var(--fgd); margin: 0 .5rem; font-size: .82rem; }
+    .nav-page { font-size: .78rem; color: var(--fgm); }
+    .nav-back {
+      margin-left: auto; display: inline-flex; align-items: center; gap: .3rem;
+      font-size: .75rem; color: var(--fgm); transition: color .15s;
+    }
+    .nav-back:hover { color: var(--fg); }
+
+    /* LAYOUT */
+    .shell { display: flex; padding-top: 48px; min-height: 100vh; }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: 220px; flex-shrink: 0;
+      position: sticky; top: 48px; height: calc(100vh - 48px);
+      overflow-y: auto; padding: 1.2rem 0;
+      border-right: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .sidebar::-webkit-scrollbar { width: 3px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .sb-group { margin-bottom: .1rem; }
+    .sb-label {
+      font-family: 'JetBrains Mono', monospace; font-size: .56rem;
+      letter-spacing: .2em; text-transform: uppercase; color: var(--fgm);
+      padding: .65rem 1.2rem .3rem; display: block;
+    }
+    .sb-link {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .38rem 1.2rem; font-size: .8rem; color: var(--fgm);
+      cursor: pointer; transition: color .12s; border: none; background: none;
+      width: 100%; text-align: left; font-family: 'Inter', sans-serif;
+      border-left: 2px solid transparent;
+    }
+    .sb-link:hover { color: var(--fg); background: rgba(255,255,255,.03); }
+    .sb-link.active { color: var(--fgb); border-left-color: var(--bhi); background: rgba(255,255,255,.04); }
+    .sb-link svg { flex-shrink: 0; color: var(--fgm); transition: color .12s; }
+    .sb-link.active svg, .sb-link:hover svg { color: var(--fg); }
+
+    /* CONTENT */
+    .content { flex: 1; min-width: 0; max-width: 760px; padding: 3rem 2.8rem 6rem; }
+
+    /* RIGHT TOC */
+    .toc {
+      width: 180px; flex-shrink: 0;
+      position: sticky; top: 48px; height: calc(100vh - 48px);
+      overflow-y: auto; padding: 1.8rem 1rem;
+    }
+    .toc-label {
+      font-family: 'JetBrains Mono', monospace; font-size: .56rem;
+      letter-spacing: .2em; text-transform: uppercase; color: var(--fgd);
+      margin-bottom: .65rem;
+    }
+    .toc-link {
+      display: block; font-size: .73rem; color: var(--fgm);
+      padding: .25rem 0 .25rem .7rem;
+      border-left: 1px solid var(--border); margin-left: .1rem;
+      transition: color .12s, border-color .12s;
+    }
+    .toc-link:hover { color: var(--fg); }
+    .toc-link.active { color: var(--fgb); border-left-color: var(--bhi); }
+
+    /* PAGE SECTIONS */
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-title { font-family: 'JetBrains Mono', monospace; font-size: 1.35rem; font-weight: 400; letter-spacing: -.02em; color: var(--fgb); margin-bottom: .4rem; }
+    .page-lead { font-size: .85rem; color: var(--fg); line-height: 1.75; margin-bottom: 1.8rem; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); max-width: 56ch; }
+    h2 { font-size: .9rem; font-weight: 500; color: var(--fgb); margin: 2rem 0 .65rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); scroll-margin-top: 68px; letter-spacing: -.01em; }
+    p { font-size: .82rem; color: var(--fg); line-height: 1.75; margin-bottom: .75rem; }
+    p strong { color: var(--fgb); font-weight: 500; }
+    ul { font-size: .82rem; color: var(--fg); line-height: 1.75; padding-left: 1.2rem; margin-bottom: .75rem; }
+    ul li { margin-bottom: .15rem; }
+    ul li strong { color: var(--fg); font-weight: 500; }
+
+    table { width: 100%; border-collapse: collapse; font-size: .8rem; margin: .75rem 0 1.2rem; }
+    th { text-align: left; padding: .45rem .65rem; background: var(--surface); color: var(--fg); font-weight: 500; border: 1px solid var(--border); font-size: .74rem; letter-spacing: .02em; }
+    td { padding: .4rem .65rem; border: 1px solid var(--border); color: var(--fg); vertical-align: top; }
+    td:first-child { font-family: 'JetBrains Mono', monospace; font-size: .74rem; color: var(--fgb); white-space: nowrap; }
+    tr:hover td { background: rgba(255,255,255,.012); }
+
+    .callout { padding: .75rem .9rem; border-radius: 4px; font-size: .8rem; color: var(--fg); margin: .9rem 0; line-height: 1.65; }
+    .callout-note { background: var(--raised); border-left: 2px solid var(--bhi); }
+    .callout-note strong { color: var(--fgb); font-weight: 500; }
+    .callout-tip { background: rgba(127,176,105,.07); border-left: 2px solid var(--green); }
+    .callout-tip strong { color: var(--green); font-weight: 500; }
+
+    .step { display: flex; gap: .85rem; margin-bottom: 1rem; align-items: flex-start; }
+    .step-n { width: 22px; height: 22px; border-radius: 50%; background: var(--raised); border: 1px solid var(--bhi); display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: .62rem; color: var(--fg); flex-shrink: 0; margin-top: 1px; }
+    .step-title { font-size: .82rem; font-weight: 500; color: var(--fgb); margin-bottom: .2rem; }
+    .step-desc { font-size: .79rem; color: var(--fg); line-height: 1.65; }
+
+    .lang-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin: .75rem 0 1rem; }
+    .lang-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: .6rem .8rem; }
+    .lang-name { font-size: .8rem; font-weight: 500; color: var(--fgb); margin-bottom: .1rem; }
+    .lang-ext { font-family: 'JetBrains Mono', monospace; font-size: .66rem; color: var(--fgm); opacity: 1; }
+
+    .vim-row { display: flex; gap: .5rem; align-items: center; padding: .35rem .4rem; border-radius: 3px; margin-bottom: 2px; }
+    .vim-row:hover { background: var(--surface); }
+    .vim-key { font-family: 'JetBrains Mono', monospace; font-size: .68rem; color: var(--fgb); background: var(--raised); border: 1px solid var(--bhi); padding: 1px 6px; border-radius: 3px; min-width: 40px; text-align: center; flex-shrink: 0; }
+    .vim-desc { font-size: .79rem; color: var(--fg); }
+
+    .mode-chip { display: inline-flex; align-items: center; padding: .18rem .55rem; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: .65rem; font-weight: 500; letter-spacing: .06em; margin-right: .35rem; margin-bottom: .35rem; }
+    .chip-n { background: var(--raised); color: var(--fgb); border: 1px solid var(--bhi); }
+    .chip-i { background: rgba(127,176,105,.09); color: var(--green); border: 1px solid rgba(127,176,105,.22); }
+    .chip-v { background: rgba(181,125,212,.09); color: var(--purple); border: 1px solid rgba(181,125,212,.22); }
+
+    .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin: .75rem 0; }
+    .setting-card { background: var(--bg); padding: .95rem 1rem; transition: background .15s; }
+    .setting-card:hover { background: var(--surface); }
+    .setting-key { font-family: 'JetBrains Mono', monospace; font-size: .7rem; color: var(--fgb); margin-bottom: .2rem; }
+    .setting-desc { font-size: .75rem; color: var(--fg); line-height: 1.55; }
+    .setting-default { font-family: 'JetBrains Mono', monospace; font-size: .62rem; color: var(--fgm); margin-top: .25rem; }
+
+    .kbd-section { margin-bottom: 1.8rem; }
+    .kbd-section-head { font-family: 'JetBrains Mono', monospace; font-size: .6rem; letter-spacing: .18em; text-transform: uppercase; color: var(--fgm); margin-bottom: .55rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+    .kbd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+    .kbd-row { display: flex; align-items: center; justify-content: space-between; padding: .5rem .75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; transition: border-color .15s; }
+    .kbd-row:hover { border-color: var(--bhi); }
+    .kbd-action { font-size: .76rem; color: var(--fg); }
+    .kbd-combo { display: flex; gap: 2px; }
+
+    /* RESPONSIVE */
+    @media(max-width:1100px) { .toc { display: none; } .content { max-width: none; } }
+    @media(max-width:700px) {
+      .sidebar { display: none; }
+      .content { padding: 2rem 1.4rem 4rem; }
+      .lang-grid { grid-template-columns: 1fr 1fr; }
+      .settings-grid { grid-template-columns: 1fr; }
+      .kbd-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-brand">
+    <span class="nav-brand-mark">の</span>
+    <span class="nav-brand-name">nova</span>
+  </div>
+  <span class="nav-sep">/</span>
+  <span class="nav-page">Manual</span>
+  <a href="landing.html" class="nav-back">
+    <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+    Back
+  </a>
+</nav>
+
+<div class="shell">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sb-group">
+      <span class="sb-label">Getting Started</span>
+      <button class="sb-link active" data-page="install">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Installation
+      </button>
+      <button class="sb-link" data-page="first-launch">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        First Launch
+      </button>
+      <button class="sb-link" data-page="interface">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        Interface
+      </button>
+    </div>
+    <div class="sb-group">
+      <span class="sb-label">Editing</span>
+      <button class="sb-link" data-page="tabs">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Tabs & Files
+      </button>
+      <button class="sb-link" data-page="vim">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h8"/></svg>
+        Vim Mode
+      </button>
+      <button class="sb-link" data-page="search">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Search
+      </button>
+      <button class="sb-link" data-page="languages">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        Languages
+      </button>
+    </div>
+    <div class="sb-group">
+      <span class="sb-label">Panels</span>
+      <button class="sb-link" data-page="file-tree">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        File Explorer
+      </button>
+      <button class="sb-link" data-page="terminal">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Terminal
+      </button>
+      <button class="sb-link" data-page="git">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+        Git Panel
+      </button>
+      <button class="sb-link" data-page="markdown">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Markdown
+      </button>
+      <button class="sb-link" data-page="spotify">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        Spotify
+      </button>
+    </div>
+    <div class="sb-group">
+      <span class="sb-label">Customisation</span>
+      <button class="sb-link" data-page="themes">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 010 20 4 4 0 010-8 4 4 0 000-8"/></svg>
+        Themes
+      </button>
+      <button class="sb-link" data-page="appearance">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 17.66l-1.41 1.41M22 12h-2M4 12H2M19.07 19.07l-1.41-1.41M5.34 6.34L3.93 4.93M12 22v-2M12 4V2"/></svg>
+        Appearance
+      </button>
+      <button class="sb-link" data-page="background">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Background
+      </button>
+      <button class="sb-link" data-page="settings">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Settings
+      </button>
+    </div>
+    <div class="sb-group">
+      <span class="sb-label">Reference</span>
+      <button class="sb-link" data-page="shortcuts">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18 3a3 3 0 00-3 3v12a3 3 0 003 3 3 3 0 003-3 3 3 0 00-3-3H6a3 3 0 00-3 3 3 3 0 003 3 3 3 0 003-3V6a3 3 0 00-3-3 3 3 0 00-3 3 3 3 0 003 3h12a3 3 0 003-3 3 3 0 00-3-3z"/></svg>
+        Shortcuts
+      </button>
+    </div>
+  </aside>
+
+  <!-- CONTENT -->
+  <main class="content">
+
+    <!-- INSTALLATION -->
+    <section class="page active" id="install">
+      <div class="page-title">Installation</div>
+      <p class="page-lead">nova is a native macOS application. No Chromium, no Electron — a lightweight native binary built with Tauri and Rust.</p>
+      <h2>Requirements</h2>
+      <ul>
+        <li><strong>macOS 12 Monterey</strong> or later</li>
+        <li>Apple Silicon or Intel — both supported</li>
+      </ul>
+      <h2>Install</h2>
+      <div class="step"><div class="step-n">1</div><div><div class="step-title">Download the DMG</div><div class="step-desc">Download <code>nova.dmg</code> from the releases page.</div></div></div>
+      <div class="step"><div class="step-n">2</div><div><div class="step-title">Drag to Applications</div><div class="step-desc">Open the DMG and drag <strong>nova.app</strong> into <code>/Applications</code>.</div></div></div>
+      <div class="step"><div class="step-n">3</div><div><div class="step-title">Bypass Gatekeeper</div><div class="step-desc">macOS will block the app on first launch because it isn't notarized. Run this once in Terminal, then open nova normally:</div></div></div>
+      <pre style="background:var(--raised);border:1px solid var(--border);border-radius:6px;padding:.65rem 1rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--fgb);margin:.75rem 0 1rem;overflow-x:auto;">xattr -cr /Applications/nova.app</pre>
+      <div class="callout callout-note"><strong>Note:</strong> Settings are stored in <code>~/Library/Application Support/nova/</code>. Deleting this folder resets everything to defaults.</div>
+    </section>
+
+    <!-- FIRST LAUNCH -->
+    <section class="page" id="first-launch">
+      <div class="page-title">First Launch</div>
+      <p class="page-lead">nova opens to an empty canvas. Nothing is configured automatically — you start from wherever you are.</p>
+      <h2>Opening a file</h2>
+      <p>Press <kbd>⌘O</kbd> or click <strong>Open File</strong>. Language is detected from the extension and the correct parser loads automatically.</p>
+      <h2>Opening a folder</h2>
+      <p>Press <kbd>⌘⇧O</kbd> to set a workspace root. This populates the File Explorer (<kbd>⌘B</kbd>) and sets the terminal's initial working directory.</p>
+      <h2>New file</h2>
+      <p>Press <kbd>⌘N</kbd> for a blank untitled tab. Name it when you save with <kbd>⌘S</kbd>.</p>
+      <div class="callout callout-tip"><strong>Tip:</strong> Open multiple windows with <kbd>⌘⇧N</kbd>. Each window has independent tabs, terminal sessions, and panel state.</div>
+    </section>
+
+    <!-- INTERFACE -->
+    <section class="page" id="interface">
+      <div class="page-title">Interface Overview</div>
+      <p class="page-lead">nova is a single window: title bar at the top, optional side panels, tab bar, editor area, and a status bar at the bottom.</p>
+      <h2>Title bar</h2>
+      <p>Icon buttons for <strong>File Explorer</strong>, <strong>Git</strong>, <strong>Terminal</strong>, and <strong>Settings</strong>. When a <code>.md</code> file is active, the <strong>Markdown preview</strong> toggle appears. The <strong>Help</strong> button is always on the right.</p>
+      <h2>Tab bar</h2>
+      <p>Each open file gets a tab with a language color dot. A dot on the tab means unsaved changes. Navigate with <kbd>⌘⌥←</kbd> / <kbd>⌘⌥→</kbd>.</p>
+      <h2>Editor</h2>
+      <p>Line gutter with relative or absolute numbers, indent guides, bracket matching, and active-line highlighting. Gutter width adapts to file size.</p>
+      <h2>Status bar</h2>
+      <p>Left to right: vim mode, language, theme, line ending, encoding, cursor position, indent width. Change them via Settings or the Command Palette.</p>
+    </section>
+
+    <!-- TABS -->
+    <section class="page" id="tabs">
+      <div class="page-title">Tabs & Files</div>
+      <p class="page-lead">Each tab holds one file with independent editor state, undo history, cursor, and vim mode toggle.</p>
+      <h2>Core actions</h2>
+      <table>
+        <thead><tr><th>Action</th><th>Shortcut</th></tr></thead>
+        <tbody>
+          <tr><td>New blank tab</td><td><kbd>⌘N</kbd></td></tr>
+          <tr><td>Open file</td><td><kbd>⌘O</kbd></td></tr>
+          <tr><td>Open folder</td><td><kbd>⌘⇧O</kbd></td></tr>
+          <tr><td>Save</td><td><kbd>⌘S</kbd></td></tr>
+          <tr><td>Close tab</td><td><kbd>⌘W</kbd></td></tr>
+          <tr><td>Next / prev tab</td><td><kbd>⌘⌥→</kbd> / <kbd>⌘⌥←</kbd></td></tr>
+        </tbody>
+      </table>
+      <h2>Language detection</h2>
+      <p>Detected from the file extension on open. New unsaved tabs default to plain text. Override via Command Palette (<kbd>⌘⇧P</kbd>).</p>
+    </section>
+
+    <!-- VIM -->
+    <section class="page" id="vim">
+      <div class="page-title">Vim Mode</div>
+      <p class="page-lead">Full modal editing, implemented per-tab. One tab can be in vim mode while another isn't.</p>
+      <h2>Enable</h2>
+      <p>Toggle with <kbd>⌘⇧V</kbd>, from Settings, or via the Command Palette. The status bar shows the current mode.</p>
+      <h2>Modes</h2>
+      <p><span class="mode-chip chip-n">NORMAL</span><span class="mode-chip chip-i">INSERT</span><span class="mode-chip chip-v">VISUAL</span></p>
+      <p>NORMAL shows a block cursor. INSERT returns to a blinking line. VISUAL highlights the selected region.</p>
+      <h2>Motions</h2>
+      <div class="vim-row"><div class="vim-key">h j k l</div><div class="vim-desc">Left / down / up / right</div></div>
+      <div class="vim-row"><div class="vim-key">w b e</div><div class="vim-desc">Word forward / backward / end</div></div>
+      <div class="vim-row"><div class="vim-key">0 ^</div><div class="vim-desc">Start of line / first non-blank</div></div>
+      <div class="vim-row"><div class="vim-key">$</div><div class="vim-desc">End of line</div></div>
+      <div class="vim-row"><div class="vim-key">gg G</div><div class="vim-desc">Top of file / bottom of file</div></div>
+      <div class="vim-row"><div class="vim-key">{ }</div><div class="vim-desc">Prev / next empty line</div></div>
+      <h2>Operators</h2>
+      <div class="vim-row"><div class="vim-key">d</div><div class="vim-desc">Delete — <code>dd</code> line, <code>dw</code> word, <code>diw</code> inner word</div></div>
+      <div class="vim-row"><div class="vim-key">c</div><div class="vim-desc">Change — delete and enter insert</div></div>
+      <div class="vim-row"><div class="vim-key">y</div><div class="vim-desc">Yank — <code>yy</code> whole line</div></div>
+      <div class="vim-row"><div class="vim-key">p P</div><div class="vim-desc">Paste after / before cursor</div></div>
+      <div class="vim-row"><div class="vim-key">u</div><div class="vim-desc">Undo</div></div>
+      <div class="vim-row"><div class="vim-key">Ctrl+r</div><div class="vim-desc">Redo</div></div>
+      <h2>Insert mode entry</h2>
+      <div class="vim-row"><div class="vim-key">i a</div><div class="vim-desc">Insert before / after cursor</div></div>
+      <div class="vim-row"><div class="vim-key">I A</div><div class="vim-desc">Insert at line start / end</div></div>
+      <div class="vim-row"><div class="vim-key">o O</div><div class="vim-desc">New line below / above</div></div>
+      <div class="vim-row"><div class="vim-key">Esc</div><div class="vim-desc">Return to NORMAL</div></div>
+      <h2>Search</h2>
+      <div class="vim-row"><div class="vim-key">/</div><div class="vim-desc">Forward search</div></div>
+      <div class="vim-row"><div class="vim-key">n N</div><div class="vim-desc">Next / prev match</div></div>
+      <div class="callout callout-note"><strong>Note:</strong> <code>:w</code> and <code>:wq</code> are supported as ex commands — save and save+close-tab.</div>
+    </section>
+
+    <!-- SEARCH -->
+    <section class="page" id="search">
+      <div class="page-title">Search</div>
+      <p class="page-lead">In-file search, workspace fuzzy finder, and command palette — three distinct tools for finding what you need.</p>
+      <h2>In-file search</h2>
+      <p>Press <kbd>⌘F</kbd>. Type to highlight all matches. <kbd>Enter</kbd> / <kbd>⇧Enter</kbd> jump between them. <kbd>Escape</kbd> closes.</p>
+      <h2>Fuzzy file finder</h2>
+      <p>Press <kbd>⌘P</kbd>. Fuzzy-matches filenames and paths across the open workspace. <kbd>Enter</kbd> opens, <kbd>Escape</kbd> dismisses.</p>
+      <h2>Command palette</h2>
+      <p>Press <kbd>⌘⇧P</kbd>. Every editor action searchable by name. Arrow keys to navigate, <kbd>Enter</kbd> to run.</p>
+    </section>
+
+    <!-- LANGUAGES -->
+    <section class="page" id="languages">
+      <div class="page-title">Language Support</div>
+      <p class="page-lead">12 languages with syntax highlighting, folding, bracket matching, and autocompletion. Parsers load on demand — only the active file's language is in memory.</p>
+      <h2>Supported</h2>
+      <div class="lang-grid">
+        <div class="lang-card"><div class="lang-name">TypeScript</div><div class="lang-ext">.ts · .tsx</div></div>
+        <div class="lang-card"><div class="lang-name">JavaScript</div><div class="lang-ext">.js · .jsx · .mjs</div></div>
+        <div class="lang-card"><div class="lang-name">Rust</div><div class="lang-ext">.rs</div></div>
+        <div class="lang-card"><div class="lang-name">Python</div><div class="lang-ext">.py</div></div>
+        <div class="lang-card"><div class="lang-name">Go</div><div class="lang-ext">.go</div></div>
+        <div class="lang-card"><div class="lang-name">C / C++</div><div class="lang-ext">.c · .cpp · .h</div></div>
+        <div class="lang-card"><div class="lang-name">Java</div><div class="lang-ext">.java</div></div>
+        <div class="lang-card"><div class="lang-name">SQL</div><div class="lang-ext">.sql</div></div>
+        <div class="lang-card"><div class="lang-name">HTML</div><div class="lang-ext">.html</div></div>
+        <div class="lang-card"><div class="lang-name">CSS</div><div class="lang-ext">.css</div></div>
+        <div class="lang-card"><div class="lang-name">JSON</div><div class="lang-ext">.json · .jsonc</div></div>
+        <div class="lang-card"><div class="lang-name">Markdown</div><div class="lang-ext">.md · .mdx</div></div>
+      </div>
+      <h2>Override language</h2>
+      <p>Open the Command Palette (<kbd>⌘⇧P</kbd>) and type the language name to switch the active tab's language manually.</p>
+    </section>
+
+    <!-- FILE TREE -->
+    <section class="page" id="file-tree">
+      <div class="page-title">File Explorer</div>
+      <p class="page-lead">Shows the workspace directory you opened with <kbd>⌘⇧O</kbd>. Toggle with <kbd>⌘B</kbd>.</p>
+      <h2>Navigation</h2>
+      <p>Click a folder to expand or collapse it. Click a file to open it in a new tab — or focus its existing tab if already open. The active file has an accent bar on its left edge.</p>
+      <h2>Reload</h2>
+      <p>The tree doesn't watch the filesystem for external changes. Press <kbd>⌘⇧O</kbd> again to reload the directory.</p>
+      <div class="callout callout-note"><strong>Note:</strong> Opening a new folder replaces the existing tree. Tabs from the previous folder remain open.</div>
+    </section>
+
+    <!-- TERMINAL -->
+    <section class="page" id="terminal">
+      <div class="page-title">Terminal</div>
+      <p class="page-lead">A full PTY-backed xterm.js terminal. Toggle with <kbd>⌘J</kbd>.</p>
+      <h2>Session persistence</h2>
+      <p>The terminal is always mounted — hiding the panel does not kill the shell. Processes, history, and current directory survive panel toggles.</p>
+      <h2>New session</h2>
+      <p>Press <kbd>⌘T</kbd> to spawn a new terminal session alongside the existing one.</p>
+      <h2>Working directory</h2>
+      <p>New sessions start in the workspace root if a folder is open, otherwise in <code>~</code>.</p>
+      <h2>Font size</h2>
+      <p><kbd>⌘+</kbd> / <kbd>⌘–</kbd> adjust terminal font size when the terminal has focus, and editor font size when the editor has focus.</p>
+      <div class="callout callout-tip"><strong>Tip:</strong> Run a build or dev server in the terminal while editing in the same window — no context switching.</div>
+    </section>
+
+    <!-- GIT -->
+    <section class="page" id="git">
+      <div class="page-title">Git Panel</div>
+      <p class="page-lead">Source control sidebar for staging, diffing, and committing. Toggle with <kbd>⌘G</kbd>.</p>
+      <h2>What it shows</h2>
+      <ul>
+        <li><strong>Staged</strong> — files ready to commit</li>
+        <li><strong>Unstaged</strong> — modified files not yet staged</li>
+        <li><strong>Untracked</strong> — new files git doesn't know about</li>
+      </ul>
+      <h2>Committing</h2>
+      <p>Stage files, write a commit message in the input at the top of the panel, press <kbd>Enter</kbd> or click <strong>Commit</strong>.</p>
+      <div class="callout callout-note"><strong>Note:</strong> Git must be on your <code>$PATH</code>. The panel activates for any folder with a <code>.git</code> directory.</div>
+    </section>
+
+    <!-- MARKDOWN -->
+    <section class="page" id="markdown">
+      <div class="page-title">Markdown Preview</div>
+      <p class="page-lead">When a <code>.md</code> file is active, a preview toggle appears in the title bar. Click it to split the view into editor and live-rendered preview.</p>
+      <h2>Rendered elements</h2>
+      <table>
+        <thead><tr><th>Syntax</th><th>Rendered as</th></tr></thead>
+        <tbody>
+          <tr><td># Heading</td><td>h1–h6 with border</td></tr>
+          <tr><td>**bold**</td><td>Yellow-tinted bold</td></tr>
+          <tr><td>*italic*</td><td>Purple italic</td></tr>
+          <tr><td>`code`</td><td>Inline code span</td></tr>
+          <tr><td>```block```</td><td>Fenced code block</td></tr>
+          <tr><td>&gt; quote</td><td>Accent-bordered blockquote</td></tr>
+          <tr><td>| table |</td><td>Striped table</td></tr>
+          <tr><td>![img](url)</td><td>Rounded image</td></tr>
+        </tbody>
+      </table>
+      <p>Preview state is remembered per-tab. The toggle only appears when a <code>.md</code> file is active.</p>
+    </section>
+
+    <!-- SPOTIFY -->
+    <section class="page" id="spotify">
+      <div class="page-title">Spotify</div>
+      <p class="page-lead">nova has a built-in Spotify player panel. Control playback, browse your library, and see what's playing without switching apps.</p>
+      <h2>Toggle</h2>
+      <p>Press <kbd>⌘⇧M</kbd> or use the Command Palette to open and close the Spotify panel.</p>
+      <h2>What it does</h2>
+      <ul>
+        <li>Shows the currently playing track, artist, and album art</li>
+        <li>Play / pause, next, previous controls</li>
+        <li>Browse your playlists and library</li>
+        <li>Volume control</li>
+      </ul>
+      <h2>Requirements</h2>
+      <p>Spotify must be running on your machine. The panel communicates with the Spotify client via its local API.</p>
+      <div class="callout callout-tip"><strong>Tip:</strong> The panel docks alongside the other side panels and remembers its open/closed state between sessions.</div>
+    </section>
+
+    <!-- THEMES -->
+    <section class="page" id="themes">
+      <div class="page-title">Themes</div>
+      <p class="page-lead">Ten dark themes, all applied live via CodeMirror compartments — no view reload, no cursor jump, no undo history loss.</p>
+      <h2>Changing theme</h2>
+      <p>Open Settings (<kbd>⌘,</kbd>) and pick from the dropdown. Or search by name in the Command Palette.</p>
+      <h2>All themes</h2>
+      <table>
+        <thead><tr><th>Theme</th><th>Character</th></tr></thead>
+        <tbody>
+          <tr><td>Atom Dark</td><td>Default. Mid-grey base, blue accent, One Dark palette.</td></tr>
+          <tr><td>Dracula</td><td>Dark purple with pink and green highlights.</td></tr>
+          <tr><td>Nord</td><td>Arctic blue-grey, low contrast, great for long sessions.</td></tr>
+          <tr><td>Tokyo Night</td><td>Deep blue-black with vibrant purple and cyan.</td></tr>
+          <tr><td>Monokai</td><td>High contrast, warm background, electric green and pink.</td></tr>
+          <tr><td>Gruvbox Dark</td><td>Earthy tones, amber yellows, terracotta reds.</td></tr>
+          <tr><td>Catppuccin Mocha</td><td>Soft pastels on a dark mauve base.</td></tr>
+          <tr><td>GitHub Dark</td><td>Near-black, matching GitHub's dark mode.</td></tr>
+          <tr><td>Rosé Pine</td><td>Muted warm rose tones.</td></tr>
+          <tr><td>Palenight</td><td>Deep indigo with soft purple and gold tokens.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- APPEARANCE -->
+    <section class="page" id="appearance">
+      <div class="page-title">Appearance</div>
+      <p class="page-lead">Font size, line numbers, word wrap, indentation, and bracket behavior — all adjustable without touching a config file.</p>
+      <h2>Font size</h2>
+      <p><kbd>⌘+</kbd> / <kbd>⌘–</kbd> when the editor has focus. Range 8–32 px.</p>
+      <h2>Line numbers</h2>
+      <p><strong>Relative</strong> by default — the current line shows its absolute number, surrounding lines show their distance. Ideal for vim motions like <code>5j</code>. Toggle in Settings.</p>
+      <h2>Word wrap</h2>
+      <p>Toggle with <kbd>⌘⇧W</kbd> or in Settings.</p>
+      <h2>Indentation</h2>
+      <p>2 or 4 spaces, configurable in Settings. Indent guides are drawn per level.</p>
+      <h2>Full dark mode</h2>
+      <p>Deepens sidebar and UI chrome beyond what the current theme defines. Useful with light-ish themes.</p>
+    </section>
+
+    <!-- BACKGROUND -->
+    <section class="page" id="background">
+      <div class="page-title">Background Image</div>
+      <p class="page-lead">Render a custom image behind editor surfaces — opacity, blur, and tint are all independently controlled.</p>
+      <h2>Setting a background</h2>
+      <div class="step"><div class="step-n">1</div><div><div class="step-title">Open Settings</div><div class="step-desc">Press <kbd>⌘,</kbd> and scroll to the Background section.</div></div></div>
+      <div class="step"><div class="step-n">2</div><div><div class="step-title">Choose an image</div><div class="step-desc">Click <strong>Choose image</strong> — PNG, JPG, or WEBP. Loads immediately.</div></div></div>
+      <div class="step"><div class="step-n">3</div><div><div class="step-title">Adjust sliders</div><div class="step-desc">Opacity (image brightness), blur (gaussian blur px), tint (dark overlay strength).</div></div></div>
+      <div class="callout callout-tip"><strong>Tip:</strong> Tint 0.65 + blur 6px works well for most images.</div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="settings">
+      <div class="page-title">Settings Reference</div>
+      <p class="page-lead">All settings persist automatically to <code>~/Library/Application Support/nova/settings.json</code>.</p>
+      <h2>All options</h2>
+      <div class="settings-grid">
+        <div class="setting-card"><div class="setting-key">theme</div><div class="setting-desc">Editor and UI color theme</div><div class="setting-default">default: Atom Dark</div></div>
+        <div class="setting-card"><div class="setting-key">fontSize</div><div class="setting-desc">Editor font size in px (8–32)</div><div class="setting-default">default: 13.5</div></div>
+        <div class="setting-card"><div class="setting-key">vim</div><div class="setting-desc">Modal vim editing</div><div class="setting-default">default: false</div></div>
+        <div class="setting-card"><div class="setting-key">wordWrap</div><div class="setting-desc">Wrap long lines at window edge</div><div class="setting-default">default: false</div></div>
+        <div class="setting-card"><div class="setting-key">lineNumbers</div><div class="setting-desc">absolute or relative</div><div class="setting-default">default: relative</div></div>
+        <div class="setting-card"><div class="setting-key">indentWidth</div><div class="setting-desc">Spaces per indent level</div><div class="setting-default">default: 2</div></div>
+        <div class="setting-card"><div class="setting-key">autoCloseBrackets</div><div class="setting-desc">Auto-insert closing bracket</div><div class="setting-default">default: true</div></div>
+        <div class="setting-card"><div class="setting-key">indentGuides</div><div class="setting-desc">Vertical indent guide lines</div><div class="setting-default">default: true</div></div>
+        <div class="setting-card"><div class="setting-key">fullDark</div><div class="setting-desc">Deepen UI chrome</div><div class="setting-default">default: false</div></div>
+        <div class="setting-card"><div class="setting-key">background.opacity</div><div class="setting-desc">Image brightness (0–1)</div><div class="setting-default">default: 0.15</div></div>
+        <div class="setting-card"><div class="setting-key">background.blur</div><div class="setting-desc">Gaussian blur px (0–20)</div><div class="setting-default">default: 4</div></div>
+        <div class="setting-card"><div class="setting-key">background.tint</div><div class="setting-desc">Dark overlay strength (0–1)</div><div class="setting-default">default: 0.6</div></div>
+      </div>
+    </section>
+
+    <!-- SHORTCUTS -->
+    <section class="page" id="shortcuts">
+      <div class="page-title">Keyboard Shortcuts</div>
+      <p class="page-lead">Complete shortcut reference.</p>
+      <div class="kbd-section">
+        <div class="kbd-section-head">Files & Tabs</div>
+        <div class="kbd-grid">
+          <div class="kbd-row"><span class="kbd-action">New file</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>N</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Open file</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>O</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Open folder</span>    <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>O</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Save</span>           <span class="kbd-combo"><kbd>⌘</kbd><kbd>S</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Close tab</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>W</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">New window</span>     <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Next tab</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>→</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Prev tab</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>⌥</kbd><kbd>←</kbd></span></div>
+        </div>
+      </div>
+      <div class="kbd-section">
+        <div class="kbd-section-head">Navigation</div>
+        <div class="kbd-grid">
+          <div class="kbd-row"><span class="kbd-action">Fuzzy finder</span>    <span class="kbd-combo"><kbd>⌘</kbd><kbd>P</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Command palette</span> <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Find in file</span>    <span class="kbd-combo"><kbd>⌘</kbd><kbd>F</kbd></span></div>
+        </div>
+      </div>
+      <div class="kbd-section">
+        <div class="kbd-section-head">Panels</div>
+        <div class="kbd-grid">
+          <div class="kbd-row"><span class="kbd-action">File explorer</span>  <span class="kbd-combo"><kbd>⌘</kbd><kbd>B</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Terminal</span>        <span class="kbd-combo"><kbd>⌘</kbd><kbd>J</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">New terminal</span>    <span class="kbd-combo"><kbd>⌘</kbd><kbd>T</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Git panel</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>G</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Spotify</span>         <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Settings</span>        <span class="kbd-combo"><kbd>⌘</kbd><kbd>,</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Shortcuts help</span> <span class="kbd-combo"><kbd>⌘</kbd><kbd>H</kbd></span></div>
+        </div>
+      </div>
+      <div class="kbd-section">
+        <div class="kbd-section-head">Editor</div>
+        <div class="kbd-grid">
+          <div class="kbd-row"><span class="kbd-action">Toggle vim</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>V</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Word wrap</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>W</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Font size up</span>    <span class="kbd-combo"><kbd>⌘</kbd><kbd>+</kbd></span></div>
+          <div class="kbd-row"><span class="kbd-action">Font size down</span>  <span class="kbd-combo"><kbd>⌘</kbd><kbd>–</kbd></span></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- TOC RAIL -->
+  <aside class="toc" id="toc">
+    <div class="toc-label">On this page</div>
+  </aside>
+</div>
+
+<script>
+  const links  = document.querySelectorAll('.sb-link');
+  const pages  = document.querySelectorAll('.page');
+  const tocEl  = document.getElementById('toc');
+
+  function buildToc(page) {
+    const label = tocEl.querySelector('.toc-label');
+    tocEl.innerHTML = '';
+    tocEl.appendChild(label);
+    page.querySelectorAll('h2').forEach(h => {
+      if (!h.id) h.id = h.textContent.trim().toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'');
+      const a = document.createElement('a');
+      a.className = 'toc-link';
+      a.textContent = h.textContent;
+      a.href = '#';
+      a.onclick = e => { e.preventDefault(); h.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+      tocEl.appendChild(a);
+    });
+  }
+
+  function activate(id) {
+    links.forEach(l => l.classList.toggle('active', l.dataset.page === id));
+    pages.forEach(p => p.classList.toggle('active', p.id === id));
+    const page = document.getElementById(id);
+    if (page) { buildToc(page); }
+    document.querySelector('.content').scrollTop = 0;
+    history.replaceState(null, '', '#' + id);
+  }
+
+  links.forEach(l => l.addEventListener('click', () => activate(l.dataset.page)));
+
+  const hash = location.hash.slice(1);
+  activate(document.getElementById(hash) ? hash : 'install');
+</script>
+</body>
+</html>

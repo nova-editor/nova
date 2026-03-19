@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>nova</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:      #080808;
+      --surface: #101010;
+      --raised:  #161616;
+      --border:  rgba(255,255,255,0.07);
+      --bhi:     rgba(255,255,255,0.13);
+      --accent:  #ffffff;
+      --alo:     rgba(255,255,255,0.05);
+      --fg:      #888888;
+      --fgb:     #f0ede8;
+      --fgm:     #4a4a4a;
+      --fgd:     #262626;
+      --green:   #1DB954;
+      --purple:  #b57dd4;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      background: var(--bg);
+      background-image: radial-gradient(rgba(255,255,255,.028) 1px, transparent 1px);
+      background-size: 26px 26px;
+      color: var(--fg);
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { display: block; max-width: 100%; }
+
+    /* ── NAV ───────────────────────────────────────────── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: 48px;
+      display: flex; align-items: center;
+      padding: 0 2rem;
+      background: rgba(8,8,8,0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo { display: flex; align-items: center; gap: 7px; flex: 1; }
+    .nav-logo-mark { font-size: 1.1rem; color: var(--fgb); line-height: 1; font-family: 'Hiragino Sans', 'Yu Gothic', 'Noto Sans JP', sans-serif; }
+    .nav-logo-name { font-size: .85rem; font-weight: 500; color: var(--fgb); letter-spacing: -.01em; }
+    .nav-links { display: flex; align-items: center; gap: 1.6rem; }
+    .nav-links a { font-size: .78rem; color: var(--fgm); transition: color .15s; }
+    .nav-links a:hover { color: var(--fg); }
+    .nav-dl {
+      margin-left: 1.4rem;
+      display: inline-flex; align-items: center; gap: .35rem;
+      font-size: .75rem; font-weight: 500;
+      background: #fff; color: #000;
+      padding: .3rem .75rem; border-radius: 4px;
+      transition: opacity .15s;
+    }
+    .nav-dl:hover { opacity: .8; }
+
+    /* ── HERO ──────────────────────────────────────────── */
+    .hero {
+      padding: 120px 2rem 0;
+      text-align: center;
+      max-width: 900px; margin: 0 auto;
+      position: relative;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; top: 60px; left: 50%; transform: translateX(-50%);
+      width: 700px; height: 500px;
+      background: radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 68%);
+      pointer-events: none; z-index: 0;
+    }
+    .hero > * { position: relative; z-index: 1; }
+    .hero-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .68rem; color: rgba(255,255,255,0.22);
+      margin-bottom: 2.2rem; letter-spacing: .04em;
+    }
+    .hero-h1 {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(2.2rem, 5.5vw, 4.4rem);
+      font-weight: 400;
+      letter-spacing: -.03em;
+      line-height: 1.1;
+      color: var(--fgb);
+      margin-bottom: 1.8rem;
+    }
+    .hero-h1 .dim { color: rgba(255,255,255,0.28); font-weight: 300; }
+    .hero-h1 em {
+      font-style: normal;
+      color: #fff;
+      font-weight: 500;
+    }
+    .hero-sub {
+      font-size: .8rem;
+      font-family: 'JetBrains Mono', monospace;
+      color: rgba(255,255,255,0.3);
+      max-width: 52ch;
+      margin: 0 auto 2.4rem;
+      line-height: 2;
+      letter-spacing: .01em;
+    }
+    .hero-ctas { display: flex; align-items: center; justify-content: center; gap: .65rem; }
+    .cta-primary {
+      display: inline-flex; align-items: center; gap: .4rem;
+      background: #fff; color: #000;
+      font-size: .8rem; font-weight: 500;
+      padding: .5rem 1.1rem; border-radius: 5px;
+      transition: opacity .15s, transform .15s;
+    }
+    .cta-primary:hover { opacity: .85; transform: translateY(-1px); }
+    .cta-ghost {
+      display: inline-flex; align-items: center; gap: .4rem;
+      color: var(--fg); font-size: .8rem;
+      padding: .5rem 1.1rem; border-radius: 5px;
+      border: 1px solid var(--border);
+      transition: border-color .15s, color .15s, transform .15s;
+    }
+    .cta-ghost:hover { border-color: var(--bhi); color: var(--fgb); transform: translateY(-1px); }
+
+    /* ── CAROUSEL ───────────────────────────────────────── */
+    .carousel-section {
+      position: relative;
+      padding: 1.5rem 0 3rem;
+      margin-top: 1rem;
+    }
+    .carousel-section::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse 60% 70% at 50% 50%, rgba(255,255,255,0.025) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .carousel-wrap {
+      position: relative;
+      height: 520px;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
+      mask-image: linear-gradient(to right, transparent 0%, black 4%, black 96%, transparent 100%);
+    }
+    .carousel-track { position: relative; width: 100%; height: 100%; }
+    .carousel-tile {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: min(740px, 66vw);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      user-select: none;
+      will-change: transform, opacity;
+      transition:
+        transform .55s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity   .35s ease,
+        border-color .25s ease,
+        box-shadow   .35s ease;
+    }
+    /* macOS window chrome */
+    .tile-chrome {
+      height: 30px;
+      background: var(--raised);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center;
+      padding: 0 12px; gap: 6px; flex-shrink: 0;
+      position: relative;
+    }
+    .tile-chrome-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .tile-chrome-dot:nth-child(1) { background: #ff5f57; }
+    .tile-chrome-dot:nth-child(2) { background: #febc2e; }
+    .tile-chrome-dot:nth-child(3) { background: #28c840; }
+    .tile-chrome-title {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .58rem; color: var(--fgm); white-space: nowrap;
+    }
+    .carousel-tile img { width: 100%; display: block; pointer-events: none; margin-top: -30px; }
+    .carousel-tile.active {
+      border-color: rgba(255,255,255,0.1);
+      box-shadow: 0 20px 60px rgba(0,0,0,.6);
+      cursor: default;
+    }
+    /* Dots */
+    .carousel-dots {
+      display: flex; align-items: center; justify-content: center;
+      gap: 5px; margin-top: 1.5rem;
+    }
+    .carousel-dot {
+      height: 3px; border-radius: 2px;
+      background: var(--fgd);
+      transition: background .28s ease, width .28s ease;
+      cursor: pointer; width: 16px;
+    }
+    .carousel-dot.active { background: var(--accent); width: 26px; }
+
+    /* ── STRIP ─────────────────────────────────────────── */
+    .strip {
+      display: flex; align-items: center; justify-content: center;
+      flex-wrap: wrap; gap: 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      margin-top: 5rem;
+    }
+    .strip-item {
+      display: flex; align-items: center; gap: .5rem;
+      padding: 1.1rem 2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .7rem; color: var(--fgm);
+      border-right: 1px solid var(--border);
+    }
+    .strip-item:last-child { border-right: none; }
+    .strip-item svg { color: var(--fgd); }
+    .strip-val { color: var(--fgb); font-weight: 600; }
+
+    /* ── FEATURES ──────────────────────────────────────── */
+    .features {
+      max-width: 1000px; margin: 6rem auto;
+      padding: 0 2rem;
+    }
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .6rem; letter-spacing: .2em; text-transform: uppercase;
+      color: var(--fgm); margin-bottom: 2.5rem;
+    }
+    .feat-list { display: flex; flex-direction: column; }
+    .feat-row {
+      display: grid; grid-template-columns: 200px 1fr auto;
+      align-items: start; gap: 2rem;
+      padding: 1.4rem 0;
+      border-top: 1px solid var(--border);
+      transition: background .15s;
+    }
+    .feat-row:last-child { border-bottom: 1px solid var(--border); }
+    .feat-row:hover { background: rgba(255,255,255,.015); margin: 0 -1.5rem; padding-left: 1.5rem; padding-right: 1.5rem; border-radius: 4px; border-top-color: transparent; border-bottom-color: transparent; }
+    .feat-name-wrap { display: flex; align-items: center; gap: .65rem; padding-top: .05rem; }
+    .feat-icon { color: var(--fgm); flex-shrink: 0; }
+    .feat-name { font-size: .83rem; font-weight: 500; color: var(--fgb); letter-spacing: -.01em; white-space: nowrap; }
+    .feat-desc { font-size: .8rem; color: var(--fgm); line-height: 1.7; }
+    .feat-kbd {
+      display: inline-flex; align-items: center; gap: 2px;
+      opacity: .5; flex-shrink: 0; padding-top: .1rem;
+    }
+    kbd {
+      font-family: 'JetBrains Mono', monospace; font-size: .58rem;
+      padding: 1px 5px; border-radius: 3px;
+      background: var(--raised); border: 1px solid var(--bhi);
+      color: var(--fg);
+    }
+
+    /* ── THEMES ────────────────────────────────────────── */
+    .themes {
+      max-width: 1000px; margin: 0 auto 6rem;
+      padding: 0 2rem;
+    }
+    .themes-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.5rem; }
+    .themes-title { font-size: 1.1rem; font-weight: 300; letter-spacing: -.02em; color: var(--fgb); }
+    .themes-sub { font-size: .75rem; color: var(--fgm); }
+    .themes-grid { display: grid; grid-template-columns: repeat(8,1fr); gap: 6px; }
+    .tc { border-radius: 6px; overflow: hidden; border: 1px solid var(--border); cursor: default; transition: transform .2s, border-color .2s; }
+    .tc:hover { transform: translateY(-4px); border-color: var(--bhi); }
+    .tc-preview { height: 54px; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 8px 9px; }
+    .tc-line { height: 4px; border-radius: 2px; opacity: .85; }
+    .tc-foot { padding: 5px 7px; }
+    .tc-name { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── SPOTIFY ───────────────────────────────────────── */
+    .spotify-section {
+      max-width: 1000px; margin: 0 auto 6rem;
+      padding: 0 2rem;
+    }
+    .spotify-card {
+      display: flex; align-items: center; gap: 2.5rem;
+      padding: 2rem 2.5rem;
+      background: linear-gradient(135deg, rgba(29,185,84,0.06) 0%, var(--surface) 60%);
+      border: 1px solid rgba(29,185,84,0.15);
+      border-radius: 8px;
+      box-shadow: 0 0 60px rgba(29,185,84,0.05);
+    }
+    .spotify-icon {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: #1DB954;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .spotify-text {}
+    .spotify-new {
+      display: inline-flex; align-items: center; gap: .35rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .58rem; letter-spacing: .15em; text-transform: uppercase;
+      color: #1DB954; margin-bottom: .4rem;
+    }
+    .spotify-new::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: #1DB954; animation: pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+    .spotify-title { font-size: 1rem; font-weight: 500; color: var(--fgb); letter-spacing: -.01em; margin-bottom: .3rem; }
+    .spotify-desc { font-size: .8rem; color: var(--fgm); line-height: 1.6; }
+    .spotify-kbd { margin-left: auto; flex-shrink: 0; }
+
+    /* ── STACK ─────────────────────────────────────────── */
+    .stack {
+      max-width: 1000px; margin: 0 auto 6rem;
+      padding: 0 2rem;
+    }
+    .stack-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 1.5rem; }
+    .stack-card { background: var(--bg); padding: 1.6rem 1.4rem; transition: background .15s; }
+    .stack-card:hover { background: var(--surface); }
+    .stack-logo { margin-bottom: .9rem; }
+    .stack-name { font-size: .88rem; font-weight: 500; color: var(--fgb); margin-bottom: .25rem; letter-spacing: -.01em; }
+    .stack-role { font-size: .75rem; color: var(--fgm); line-height: 1.55; }
+    .stack-lang { font-family: 'JetBrains Mono', monospace; font-size: .58rem; color: var(--fgd); margin-top: .5rem; letter-spacing: .06em; }
+
+    /* ── SHORTCUTS ─────────────────────────────────────── */
+    .shortcuts {
+      max-width: 1000px; margin: 0 auto 6rem;
+      padding: 0 2rem;
+    }
+    .kbd-cols { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 1.5rem; }
+    .kbd-row { display: flex; align-items: center; justify-content: space-between; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 4px; transition: border-color .15s; }
+    .kbd-row:hover { border-color: var(--bhi); }
+    .kbd-action { font-size: .76rem; color: var(--fgm); }
+    .kbd-combo { display: flex; gap: 2px; }
+
+    /* ── FOOTER ────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 2rem;
+      max-width: 1000px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 2rem;
+    }
+    .footer-left { display: flex; align-items: center; gap: 10px; }
+    .footer-mark {
+      font-size: 1.15rem; line-height: 1;
+      font-family: 'Hiragino Sans', 'Yu Gothic', 'Noto Sans JP', sans-serif;
+      color: var(--fgb);
+    }
+    .footer-name { font-size: .82rem; font-weight: 500; color: var(--fgb); }
+    .footer-sep { width: 1px; height: 14px; background: var(--border); }
+    .footer-copy { font-size: .72rem; color: var(--fgm); }
+    .footer-links { display: flex; gap: 1.8rem; }
+    .footer-links a { font-size: .75rem; color: var(--fgm); transition: color .15s; }
+    .footer-links a:hover { color: var(--fgb); }
+
+    /* ── UTIL ──────────────────────────────────────────── */
+    .appear { opacity: 0; transform: translateY(14px); transition: opacity .5s ease, transform .5s ease; }
+    .appear.in { opacity: 1; transform: none; }
+    .dl1 { transition-delay: .06s } .dl2 { transition-delay: .12s } .dl3 { transition-delay: .18s }
+
+    @media(max-width:900px) {
+      .themes-grid { grid-template-columns: repeat(5,1fr); }
+      .stack-grid { grid-template-columns: 1fr 1fr; }
+      .kbd-cols { grid-template-columns: 1fr 1fr; }
+      .feat-row { grid-template-columns: 1fr; gap: .5rem; }
+      .feat-kbd { display: none; }
+    }
+    @media(max-width:600px) {
+      .nav-links { display: none; }
+      .themes-grid { grid-template-columns: repeat(4,1fr); }
+      .kbd-cols { grid-template-columns: 1fr; }
+      .spotify-card { flex-direction: column; gap: 1rem; }
+      .spotify-kbd { margin-left: 0; }
+      .strip-item { padding: .9rem 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo">
+    <span class="nav-logo-mark">の</span>
+    <span class="nav-logo-name">nova</span>
+  </div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#themes">Themes</a>
+    <a href="#shortcuts">Shortcuts</a>
+    <a href="manual.html">Manual</a>
+  </div>
+  <a href="downloads/nova_0.1.0_aarch64.dmg" class="nav-dl" download>
+    <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Download
+  </a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-tag">macOS · Tauri · CodeMirror</div>
+  <h1 class="hero-h1"><span class="dim">write code.</span><br /><em>not configuration.</em></h1>
+  <p class="hero-sub">vim · 16 themes · terminal · git · spotify · presets<br />native macOS — zero config files</p>
+  <div class="hero-ctas">
+    <a href="downloads/nova_0.1.0_aarch64.dmg" class="cta-primary" download>
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Download for macOS
+    </a>
+    <a href="manual.html" class="cta-ghost">
+      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+      Read the manual
+    </a>
+  </div>
+</section>
+
+<!-- CAROUSEL -->
+<div class="carousel-section appear">
+  <div class="carousel-wrap">
+    <div class="carousel-track" id="carousel-track">
+      <div class="carousel-tile" data-idx="0">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot3.webp" type="image/webp" /><img src="assets/screenshots/screenshot3.png" alt="nova — 1" draggable="false" loading="eager" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="1">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot4.webp" type="image/webp" /><img src="assets/screenshots/screenshot4.png" alt="nova — 2" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="2">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot5.webp" type="image/webp" /><img src="assets/screenshots/screenshot5.png" alt="nova — 3" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="3">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot6.webp" type="image/webp" /><img src="assets/screenshots/screenshot6.png" alt="nova — 4" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="4">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot7.webp" type="image/webp" /><img src="assets/screenshots/screenshot7.png" alt="nova — 5" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="5">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot8.webp" type="image/webp" /><img src="assets/screenshots/screenshot8.png" alt="nova — 6" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="6">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot9.webp" type="image/webp" /><img src="assets/screenshots/screenshot9.png" alt="nova — 7" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="7">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot10.webp" type="image/webp" /><img src="assets/screenshots/screenshot10.png" alt="nova — 8" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="8">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot11.webp" type="image/webp" /><img src="assets/screenshots/screenshot11.png" alt="nova — 9" draggable="false" loading="lazy" /></picture>
+      </div>
+      <div class="carousel-tile" data-idx="9">
+        <div class="tile-chrome"><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><div class="tile-chrome-dot"></div><span class="tile-chrome-title">nova</span></div>
+        <picture><source srcset="assets/screenshots/screenshot12.webp" type="image/webp" /><img src="assets/screenshots/screenshot12.png" alt="nova — 10" draggable="false" loading="lazy" /></picture>
+      </div>
+    </div>
+  </div>
+  <div class="carousel-dots" id="carousel-dots"></div>
+</div>
+
+<!-- STRIP -->
+<div class="strip appear dl1">
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+    <span><span class="strip-val">12</span> languages</span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+    <span><span class="strip-val">16</span> themes</span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h8"/></svg>
+    <span><span class="strip-val">3</span> vim modes</span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+    <span>Real <span class="strip-val">PTY</span> terminal</span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    <span>Spotify <span class="strip-val">player</span></span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    <span><span class="strip-val">5</span> presets</span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    <span><span class="strip-val">0</span> config files</span>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="features appear" id="features">
+  <div class="section-label">Features</div>
+  <div class="feat-list">
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h8"/></svg>
+        </span>
+        <span class="feat-name">Vim mode</span>
+      </div>
+      <p class="feat-desc">Full modal editing — normal, insert, and visual. Motion operators, marks, registers, search. Toggled per-tab so you can mix modal and normal editing across open files.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>V</kbd></div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        </span>
+        <span class="feat-name">Terminal</span>
+      </div>
+      <p class="feat-desc">A real PTY-backed xterm.js terminal. Always mounted — closing the panel hides it but keeps your shell alive. Processes, history, and working directory survive panel toggles.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>J</kbd></div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 01-9 9"/></svg>
+        </span>
+        <span class="feat-name">Git panel</span>
+      </div>
+      <p class="feat-desc">Stage, unstage, diff, and commit without leaving nova. Shows changed, untracked, and staged files. Works with any repo — just open a folder that has a .git directory.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>G</kbd></div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </span>
+        <span class="feat-name">Fuzzy finder</span>
+      </div>
+      <p class="feat-desc">Instant workspace-wide file search. Fuzzy-matches filenames and paths as you type. Jump to any file in the project without touching the file tree.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>P</kbd></div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M18 3a3 3 0 00-3 3v12a3 3 0 003 3 3 3 0 003-3 3 3 0 00-3-3H6a3 3 0 00-3 3 3 3 0 003 3 3 3 0 003-3V6a3 3 0 00-3-3 3 3 0 00-3 3 3 3 0 003 3h12a3 3 0 003-3 3 3 0 00-3-3z"/></svg>
+        </span>
+        <span class="feat-name">Command palette</span>
+      </div>
+      <p class="feat-desc">Every editor action searchable by name. Switch themes, toggle panels, change language, adjust font size — all from a single input that opens with a chord.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd></div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </span>
+        <span class="feat-name">Markdown preview</span>
+      </div>
+      <p class="feat-desc">Live side-by-side preview for .md files. Renders headings, code blocks, tables, images, and all standard Markdown elements. Updates as you type, state remembered per-tab.</p>
+      <div class="feat-kbd" style="opacity:.5; font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--fgm);">auto</div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        </span>
+        <span class="feat-name">12 languages</span>
+      </div>
+      <p class="feat-desc">TypeScript, JavaScript, Rust, Python, Go, C/C++, Java, SQL, HTML, CSS, JSON, Markdown. Syntax highlighting, folding, bracket matching, and autocompletion. Parsers load on demand.</p>
+      <div class="feat-kbd" style="opacity:.5; font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--fgm);">auto</div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </span>
+        <span class="feat-name">Background image</span>
+      </div>
+      <p class="feat-desc">Set any image behind the editor. Opacity, blur, and dark tint are independently adjustable. Editor and sidebar surfaces become transparent to let it show through.</p>
+      <div class="feat-kbd" style="opacity:.5; font-family:'JetBrains Mono',monospace; font-size:.6rem; color:var(--fgm);">settings</div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+        </span>
+        <span class="feat-name">File explorer</span>
+      </div>
+      <p class="feat-desc">Collapsible workspace sidebar. Open a folder and the tree appears — no project files or configuration required. Active file is highlighted; navigates to existing tabs on re-open.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>B</kbd></div>
+    </div>
+
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </span>
+        <span class="feat-name">Presets</span>
+      </div>
+      <p class="feat-desc">Save up to 5 named snapshots of your entire editor configuration — theme, font, terminal, background, and more. Load any preset instantly or cycle through them with a single chord.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>\</kbd></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- THEMES -->
+<section class="themes appear" id="themes">
+  <div class="themes-header">
+    <div>
+      <div class="section-label" style="margin-bottom:.5rem">Themes</div>
+      <div class="themes-title">Sixteen curated palettes.</div>
+    </div>
+    <div class="themes-sub">Live-swap via compartments — no reload, no cursor jump.</div>
+  </div>
+  <div class="themes-grid">
+    <div class="tc"><div class="tc-preview" style="background:#282c34"><div class="tc-line" style="width:72%;background:#61afef"></div><div class="tc-line" style="width:48%;background:#98c379"></div><div class="tc-line" style="width:80%;background:#c678dd"></div></div><div class="tc-foot" style="background:#21252b"><div class="tc-name">Atom Dark</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#282a36"><div class="tc-line" style="width:65%;background:#ff79c6"></div><div class="tc-line" style="width:50%;background:#50fa7b"></div><div class="tc-line" style="width:78%;background:#bd93f9"></div></div><div class="tc-foot" style="background:#21222c"><div class="tc-name">Dracula</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#2e3440"><div class="tc-line" style="width:62%;background:#88c0d0"></div><div class="tc-line" style="width:45%;background:#a3be8c"></div><div class="tc-line" style="width:74%;background:#81a1c1"></div></div><div class="tc-foot" style="background:#272c36"><div class="tc-name">Nord</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#1a1b2e"><div class="tc-line" style="width:68%;background:#7aa2f7"></div><div class="tc-line" style="width:46%;background:#9ece6a"></div><div class="tc-line" style="width:79%;background:#bb9af7"></div></div><div class="tc-foot" style="background:#141520"><div class="tc-name">Tokyo Night</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#272822"><div class="tc-line" style="width:66%;background:#66d9e8"></div><div class="tc-line" style="width:49%;background:#a6e22e"></div><div class="tc-line" style="width:82%;background:#f92672"></div></div><div class="tc-foot" style="background:#1e1f1c"><div class="tc-name">Monokai</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#282828"><div class="tc-line" style="width:63%;background:#83a598"></div><div class="tc-line" style="width:44%;background:#b8bb26"></div><div class="tc-line" style="width:77%;background:#fb4934"></div></div><div class="tc-foot" style="background:#1d2021"><div class="tc-name">Gruvbox</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#1e1e2e"><div class="tc-line" style="width:67%;background:#89b4fa"></div><div class="tc-line" style="width:47%;background:#a6e3a1"></div><div class="tc-line" style="width:81%;background:#cba6f7"></div></div><div class="tc-foot" style="background:#181825"><div class="tc-name">Catppuccin</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#0d1117"><div class="tc-line" style="width:70%;background:#58a6ff"></div><div class="tc-line" style="width:44%;background:#7ee787"></div><div class="tc-line" style="width:78%;background:#d2a8ff"></div></div><div class="tc-foot" style="background:#080c10"><div class="tc-name">GitHub Dark</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#191724"><div class="tc-line" style="width:63%;background:#9ccfd8"></div><div class="tc-line" style="width:46%;background:#31748f"></div><div class="tc-line" style="width:76%;background:#ebbcba"></div></div><div class="tc-foot" style="background:#12101e"><div class="tc-name">Rosé Pine</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#292d3e"><div class="tc-line" style="width:69%;background:#82aaff"></div><div class="tc-line" style="width:43%;background:#c3e88d"></div><div class="tc-line" style="width:77%;background:#c792ea"></div></div><div class="tc-foot" style="background:#202331"><div class="tc-name">Palenight</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#282c34"><div class="tc-line" style="width:68%;background:#61afef"></div><div class="tc-line" style="width:47%;background:#98c379"></div><div class="tc-line" style="width:80%;background:#c678dd"></div></div><div class="tc-foot" style="background:#21252b"><div class="tc-name">One Dark</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#1f1f28"><div class="tc-line" style="width:65%;background:#7e9cd8"></div><div class="tc-line" style="width:44%;background:#76946a"></div><div class="tc-line" style="width:76%;background:#957fb8"></div></div><div class="tc-foot" style="background:#16161d"><div class="tc-name">Kanagawa</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#272e33"><div class="tc-line" style="width:67%;background:#7fbbb3"></div><div class="tc-line" style="width:46%;background:#a7c080"></div><div class="tc-line" style="width:79%;background:#d699b6"></div></div><div class="tc-foot" style="background:#1e2326"><div class="tc-name">Everforest</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#0d1017"><div class="tc-line" style="width:70%;background:#59c2ff"></div><div class="tc-line" style="width:45%;background:#7fd962"></div><div class="tc-line" style="width:78%;background:#e6b450"></div></div><div class="tc-foot" style="background:#0b0e14"><div class="tc-name">Ayu Dark</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#1a0a0a"><div class="tc-line" style="width:66%;background:#e5173f"></div><div class="tc-line" style="width:48%;background:#7ec86a"></div><div class="tc-line" style="width:77%;background:#7aacdc"></div></div><div class="tc-foot" style="background:#120606"><div class="tc-name">Crimson</div></div></div>
+    <div class="tc"><div class="tc-preview" style="background:#0a0a0a"><div class="tc-line" style="width:63%;background:#c0c0c0"></div><div class="tc-line" style="width:44%;background:#808080"></div><div class="tc-line" style="width:75%;background:#e8e8e8"></div></div><div class="tc-foot" style="background:#050505"><div class="tc-name">Monochrome</div></div></div>
+  </div>
+</section>
+
+<!-- SPOTIFY -->
+<section class="spotify-section appear" id="spotify">
+  <div class="spotify-card">
+    <div class="spotify-icon">
+      <svg width="24" height="24" fill="white" viewBox="0 0 24 24"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+    </div>
+    <div class="spotify-text">
+      <div class="spotify-new">New</div>
+      <div class="spotify-title">Spotify player — built in.</div>
+      <p class="spotify-desc">Control playback, browse your library, and see what's playing without leaving the editor. Docked as a panel, toggled with a shortcut.</p>
+    </div>
+    <div class="spotify-kbd">
+      <div style="display:flex;align-items:center;gap:2px;"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--fgm);margin-top:.4rem;text-align:right;">toggle</div>
+    </div>
+  </div>
+</section>
+
+<!-- STACK -->
+<section class="stack appear">
+  <div class="section-label">Built with</div>
+  <div class="stack-grid">
+    <div class="stack-card">
+      <div class="stack-logo">
+        <!-- Tauri simplified mark -->
+        <svg width="28" height="28" viewBox="0 0 128 128" fill="none">
+          <path d="M64 8C33.1 8 8 33.1 8 64s25.1 56 56 56 56-25.1 56-56S94.9 8 64 8z" fill="none" stroke="#ffd700" stroke-width="6"/>
+          <path d="M64 28c-19.9 0-36 16.1-36 36s16.1 36 36 36 36-16.1 36-36-16.1-36-36-36z" fill="none" stroke="#ffd700" stroke-width="4" stroke-dasharray="8 4"/>
+          <circle cx="64" cy="64" r="14" fill="#ffd700" opacity=".9"/>
+        </svg>
+      </div>
+      <div class="stack-name">Tauri</div>
+      <div class="stack-role">Native macOS shell — file I/O, window management, OS menus, PTY.</div>
+      <div class="stack-lang">Rust</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-logo">
+        <!-- React atom mark -->
+        <svg width="28" height="28" viewBox="0 0 128 128" fill="none">
+          <ellipse cx="64" cy="64" rx="56" ry="22" stroke="#61dafb" stroke-width="5" fill="none"/>
+          <ellipse cx="64" cy="64" rx="56" ry="22" stroke="#61dafb" stroke-width="5" fill="none" transform="rotate(60 64 64)"/>
+          <ellipse cx="64" cy="64" rx="56" ry="22" stroke="#61dafb" stroke-width="5" fill="none" transform="rotate(120 64 64)"/>
+          <circle cx="64" cy="64" r="8" fill="#61dafb"/>
+        </svg>
+      </div>
+      <div class="stack-name">React</div>
+      <div class="stack-role">UI layer — tabs, panels, overlays, settings, command palette.</div>
+      <div class="stack-lang">TypeScript</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-logo">
+        <!-- CodeMirror C mark -->
+        <svg width="28" height="28" viewBox="0 0 128 128" fill="none">
+          <rect x="8" y="8" width="112" height="112" rx="16" fill="none" stroke="#4ec9b0" stroke-width="5"/>
+          <text x="64" y="80" font-family="JetBrains Mono, monospace" font-size="52" font-weight="500" fill="#4ec9b0" text-anchor="middle">CM</text>
+        </svg>
+      </div>
+      <div class="stack-name">CodeMirror 6</div>
+      <div class="stack-role">Editing engine — parsing, highlighting, vim, compartments, folding.</div>
+      <div class="stack-lang">TypeScript</div>
+    </div>
+    <div class="stack-card">
+      <div class="stack-logo">
+        <!-- xterm terminal mark -->
+        <svg width="28" height="28" viewBox="0 0 128 128" fill="none">
+          <rect x="8" y="20" width="112" height="88" rx="10" fill="none" stroke="#e5c07b" stroke-width="5"/>
+          <polyline points="28,50 52,64 28,78" stroke="#e5c07b" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <line x1="62" y1="84" x2="100" y2="84" stroke="#e5c07b" stroke-width="6" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <div class="stack-name">xterm.js</div>
+      <div class="stack-role">Full VT100/ANSI terminal emulator connected to a real PTY.</div>
+      <div class="stack-lang">TypeScript</div>
+    </div>
+  </div>
+</section>
+
+<!-- SHORTCUTS -->
+<section class="shortcuts appear" id="shortcuts">
+  <div class="section-label">Keyboard shortcuts</div>
+  <div class="kbd-cols">
+    <div class="kbd-row"><span class="kbd-action">New file</span>             <span class="kbd-combo"><kbd>⌘</kbd><kbd>N</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Fuzzy finder</span>         <span class="kbd-combo"><kbd>⌘</kbd><kbd>P</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Toggle explorer</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>B</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Open file</span>            <span class="kbd-combo"><kbd>⌘</kbd><kbd>O</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Command palette</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Toggle terminal</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>J</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Open folder</span>          <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>O</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Toggle vim mode</span>      <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>V</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Toggle git panel</span>     <span class="kbd-combo"><kbd>⌘</kbd><kbd>G</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Save</span>                 <span class="kbd-combo"><kbd>⌘</kbd><kbd>S</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Word wrap</span>            <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>W</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Spotify</span>              <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Close tab</span>            <span class="kbd-combo"><kbd>⌘</kbd><kbd>W</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Font size up</span>         <span class="kbd-combo"><kbd>⌘</kbd><kbd>+</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Settings</span>             <span class="kbd-combo"><kbd>⌘</kbd><kbd>,</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">New terminal</span>         <span class="kbd-combo"><kbd>⌘</kbd><kbd>T</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Font size down</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>–</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">New window</span>           <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Cycle preset</span>         <span class="kbd-combo"><kbd>⌘</kbd><kbd>\</kbd></span></div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-left">
+    <span class="footer-mark">の</span>
+    <span class="footer-name">nova</span>
+    <div class="footer-sep"></div>
+    <span class="footer-copy">© 2025 nova. All rights reserved.</span>
+  </div>
+  <div class="footer-links">
+    <a href="manual.html">Manual</a>
+    <a href="#features">Features</a>
+    <a href="#themes">Themes</a>
+    <a href="#shortcuts">Shortcuts</a>
+    <a href="downloads/nova_0.1.0_aarch64.dmg" download>Download</a>
+  </div>
+</footer>
+
+<script>
+  // scroll reveal
+  const io = new IntersectionObserver(entries =>
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }),
+    { threshold: 0.05 }
+  );
+  document.querySelectorAll('.appear').forEach(el => io.observe(el));
+
+  // carousel — infinite loop
+  (function () {
+    const tiles  = [...document.querySelectorAll('.carousel-tile')];
+    const dotsEl = document.getElementById('carousel-dots');
+    const N      = tiles.length;
+    let active   = 0;
+    let timer;
+
+    const dots = tiles.map((_, i) => {
+      const d = document.createElement('div');
+      d.className = 'carousel-dot' + (i === 0 ? ' active' : '');
+      d.addEventListener('click', () => { go(i); });
+      dotsEl.appendChild(d);
+      return d;
+    });
+
+    // circular signed distance: always in range [-floor(N/2), ceil(N/2)]
+    function cdist(i) {
+      const raw = ((i - active) % N + N) % N;
+      return raw > N / 2 ? raw - N : raw;
+    }
+
+    function update() {
+      const tileW = tiles[0].getBoundingClientRect().width || tiles[0].offsetWidth;
+      const step  = Math.round(tileW * 0.62);
+
+      tiles.forEach((tile, i) => {
+        const d    = cdist(i);
+        const dist = Math.abs(d);
+        const tx   = d * step;
+        const scale = dist === 0 ? 1 : dist === 1 ? 0.87 : 0.78;
+        const op    = dist === 0 ? 1 : dist === 1 ? 0.65 : dist === 2 ? 0.2 : 0;
+
+        tile.style.transform     = `translateX(calc(-50% + ${tx}px)) translateY(-50%) scale(${scale})`;
+        tile.style.opacity       = op;
+        tile.style.zIndex        = 20 - dist;
+        tile.style.pointerEvents = dist <= 1 ? 'auto' : 'none';
+        tile.classList.toggle('active', dist === 0);
+      });
+
+      dots.forEach((dot, i) => dot.classList.toggle('active', i === active));
+    }
+
+    function go(idx) { active = ((idx % N) + N) % N; update(); }
+    function next()  { go(active + 1); }
+    function prev()  { go(active - 1); }
+
+    function startTimer() { timer = setInterval(next, 5500); }
+    function stopTimer()  { clearInterval(timer); }
+
+    // click side tiles → step one in that direction
+    tiles.forEach((tile, i) => {
+      tile.addEventListener('click', () => {
+        const d = cdist(i);
+        if (d === 0) return;
+        d > 0 ? next() : prev();
+        stopTimer(); startTimer(); // reset auto-advance on manual interaction
+      });
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight') { next(); stopTimer(); startTimer(); }
+      if (e.key === 'ArrowLeft')  { prev(); stopTimer(); startTimer(); }
+    });
+
+    const wrap = document.querySelector('.carousel-wrap');
+    wrap.addEventListener('mouseenter', stopTimer);
+    wrap.addEventListener('mouseleave', startTimer);
+
+    window.addEventListener('resize', update);
+
+    // init without transition so tiles don't fly in from top-left
+    tiles.forEach(t => t.style.transition = 'none');
+    requestAnimationFrame(() => {
+      update();
+      requestAnimationFrame(() => tiles.forEach(t => t.style.transition = ''));
+    });
+
+    startTimer();
+  })();
+</script>
+</body>
+</html>

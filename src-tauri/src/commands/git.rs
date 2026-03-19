@@ -375,100 +375,89 @@ pub struct GraphCommit {
 /// branch tips are included so the graph is complete across all branches.
 #[tauri::command]
 pub async fn git_graph(repo_path: String, limit: usize) -> Result<Vec<GraphCommit>, String> {
-    let repo = open_repo(&repo_path)?;
-    let git_repo = &repo.repo;
+    // Each record is separated by NUL so multi-line messages don't break parsing.
+    // Format: <hash> <parents>\x01<decorate>\x01<subject>\x01<author>\x01<timestamp>
+    let raw = git_run_async(
+        vec![
+            "log".into(),
+            "--all".into(),
+            "--topo-order".into(),
+            format!("-{}", limit),
+            "--decorate=full".into(),
+            "--format=%H %P\x01%D\x01%s\x01%an\x01%ct".into(),
+        ],
+        repo_path,
+    )
+    .await?;
 
-    // ── Build oid → ref-names map ─────────────────────────────────────────
-    let mut ref_map: std::collections::HashMap<git2::Oid, Vec<String>> = std::collections::HashMap::new();
-
-    // Local branches
-    if let Ok(branches) = git_repo.branches(Some(git2::BranchType::Local)) {
-        for entry in branches.flatten() {
-            let (branch, _) = entry;
-            let name = match branch.name() {
-                Ok(Some(n)) => n.to_string(),
-                _ => continue,
-            };
-            if let Ok(Some(target)) = branch.get().resolve().map(|r| r.target()) {
-                ref_map.entry(target).or_default().push(name);
-            }
-        }
-    }
-
-    // Remote branches
-    if let Ok(branches) = git_repo.branches(Some(git2::BranchType::Remote)) {
-        for entry in branches.flatten() {
-            let (branch, _) = entry;
-            let name = match branch.name() {
-                Ok(Some(n)) => n.to_string(),
-                _ => continue,
-            };
-            if let Ok(Some(target)) = branch.get().resolve().map(|r| r.target()) {
-                ref_map.entry(target).or_default().push(name);
-            }
-        }
-    }
-
-    // Tags (dereference annotated tags to their commit)
-    let _ = git_repo.tag_foreach(|oid, name_bytes| {
-        let name = std::str::from_utf8(name_bytes)
-            .unwrap_or("")
-            .trim_start_matches("refs/tags/");
-        let target_oid = git_repo
-            .find_tag(oid)
-            .ok()
-            .and_then(|t| t.target().ok())
-            .map(|o| o.id())
-            .unwrap_or(oid);
-        ref_map
-            .entry(target_oid)
-            .or_default()
-            .push(format!("tag: {}", name));
-        true
-    });
-
-    // HEAD (prepend so it sorts first in the refs list)
-    let head_oid = git_repo.head().ok().and_then(|h| h.target());
-    if let Some(hoid) = head_oid {
-        ref_map.entry(hoid).or_default().insert(0, "HEAD".to_string());
-    }
-
-    // ── Walk all branch tips so we don't miss commits on non-HEAD branches ─
-    let mut revwalk = git_repo.revwalk().map_err(|e| e.to_string())?;
-    revwalk
-        .set_sorting(git2::Sort::TIME | git2::Sort::TOPOLOGICAL)
-        .map_err(|e| e.to_string())?;
-
-    // Push every local branch tip
-    if let Ok(branches) = git_repo.branches(Some(git2::BranchType::Local)) {
-        for entry in branches.flatten() {
-            let (branch, _) = entry;
-            if let Ok(Some(oid)) = branch.get().resolve().map(|r| r.target()) {
-                let _ = revwalk.push(oid);
-            }
-        }
-    }
-    // Fallback: at least push HEAD
-    if let Some(hoid) = head_oid {
-        let _ = revwalk.push(hoid);
-    }
-
-    // ── Collect commits ───────────────────────────────────────────────────
     let mut out = Vec::new();
-    for item in revwalk.take(limit) {
-        let oid = item.map_err(|e| e.to_string())?;
-        let commit = git_repo.find_commit(oid).map_err(|e| e.to_string())?;
-        let parents: Vec<String> = commit.parent_ids().map(|p| p.to_string()).collect();
-        let refs = ref_map.remove(&oid).unwrap_or_default();
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+
+        let parts: Vec<&str> = line.splitn(5, '\x01').collect();
+        if parts.len() < 5 { continue; }
+
+        let hash_parents = parts[0];
+        let decorate     = parts[1];
+        let message      = parts[2].to_string();
+        let author       = parts[3].to_string();
+        let time: i64    = parts[4].trim().parse().unwrap_or(0);
+
+        // Parse hash + parent hashes (space-separated)
+        let mut hp = hash_parts(hash_parents);
+        if hp.is_empty() { continue; }
+        let full_oid = hp.remove(0);
+        let parents  = hp;
+
+        // Parse --decorate=full output, e.g.:
+        //   "HEAD -> refs/heads/main, refs/heads/dev, refs/remotes/origin/main, tag: refs/tags/v1"
+        let refs = parse_decorate(decorate);
+
         out.push(GraphCommit {
-            oid:      format!("{:.7}", oid),
-            full_oid: oid.to_string(),
+            oid: full_oid[..full_oid.len().min(7)].to_string(),
+            full_oid,
             parents,
             refs,
-            message:  commit.summary().unwrap_or("").to_string(),
-            author:   commit.author().name().unwrap_or("unknown").to_string(),
-            time:     commit.time().seconds(),
+            message,
+            author,
+            time,
         });
     }
     Ok(out)
+}
+
+fn hash_parts(s: &str) -> Vec<String> {
+    s.split_whitespace().map(|p| p.to_string()).collect()
+}
+
+fn parse_decorate(raw: &str) -> Vec<String> {
+    if raw.trim().is_empty() { return vec![]; }
+    raw.split(',')
+        .map(|token| {
+            let t = token.trim();
+            // "HEAD -> refs/heads/main" → "HEAD" then "main"
+            if let Some(rest) = t.strip_prefix("HEAD -> ") {
+                // emit HEAD first, then the branch short-name
+                return format!("HEAD,{}", strip_ref_prefix(rest));
+            }
+            // "tag: refs/tags/v1.0" → "tag: v1.0"
+            if let Some(rest) = t.strip_prefix("tag: ") {
+                return format!("tag: {}", strip_ref_prefix(rest));
+            }
+            strip_ref_prefix(t).to_string()
+        })
+        .flat_map(|s| {
+            // Split any "HEAD,branch" tokens we created above
+            s.split(',').map(|p| p.to_string()).collect::<Vec<_>>()
+        })
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn strip_ref_prefix(r: &str) -> &str {
+    if let Some(s) = r.strip_prefix("refs/heads/")   { return s; }
+    if let Some(s) = r.strip_prefix("refs/remotes/") { return s; }
+    if let Some(s) = r.strip_prefix("refs/tags/")    { return s; }
+    r
 }

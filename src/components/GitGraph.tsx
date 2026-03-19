@@ -1,32 +1,29 @@
 /**
- * GitGraph — branch visualizer.
+ * GitGraph — branch visualiser.
  *
- * Renders a scrollable commit graph (like GitKraken / git log --graph)
- * using a lane-assignment algorithm + per-row inline SVG.
+ * Lane algorithm (one pass, newest-first):
+ *   lanes[i] = full_oid this lane is "waiting for" (tracking downward).
+ *   Per commit:
+ *   1. matchSlots = all i where lanes[i] === full_oid
+ *   2. col = matchSlots[0]  OR  first free/new slot
+ *   3. Snapshot before/after lane states for SVG drawing
+ *   4. lanes[col] = parents[0]; free matchSlots[1..] (converging); allocate
+ *      new slots for parents[1..] (merge parents).
  *
- * Layout algorithm (one pass, top-to-bottom):
- *   lanes[i] = full_oid of the commit this lane is currently "waiting for".
- *   For each commit:
- *     1. Find all lane slots that hold this commit's full_oid → matchSlots.
- *     2. Assign commit to matchSlots[0] (primary) or a new/free slot.
- *     3. Set primary slot → primary parent; free all other matching slots.
- *     4. Allocate new slots for any additional merge parents.
- *   Each row's SVG then draws:
- *     - Straight pass-through lines for unchanged lanes.
- *     - Converging bezier curves for collapsed lanes.
- *     - Diagonal bezier curves for merge-parent edges.
- *     - The commit dot.
+ * SVG drawing uses BOTH the before and after state so every transition is
+ * drawn correctly without gaps or phantom lines.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useStore } from "../store";
-import { RefreshCw, Copy, FileText, GitCommit as CommitIcon } from "lucide-react";
+import { RefreshCw, Copy, FileText } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const COL_W  = 14;   // px per lane column
-const ROW_H  = 26;   // px per commit row
-const DOT_R  = 3.5;  // commit dot radius
+const COL_W  = 16;
+const ROW_H  = 28;
+const DOT_R  = 4;
+const STROKE = 1.6;
 const HALF   = COL_W / 2;
 
 const PALETTE = [
@@ -55,30 +52,36 @@ export interface GraphCommit {
   time:     number;
 }
 
+interface MergeTarget {
+  col:   number;
+  color: string;
+}
+
 interface RowLayout {
   commit:          GraphCommit;
   col:             number;
   color:           string;
-  /** Lane slot states BEFORE this commit was processed (for drawing incoming lines). */
-  incomingSlots:   (string | null)[];
-  incomingColors:  string[];
-  /** Slots from `incomingSlots` that pointed to this commit and were freed (they converge into `col`). */
+  /** Lane state at the TOP of this row (before this commit is processed). */
+  before:          (string | null)[];
+  beforeColors:    string[];
+  /** Lane state at the BOTTOM of this row (after this commit is processed). */
+  after:           (string | null)[];
+  afterColors:     string[];
+  /** Slots (≠ col) that were also tracking this commit — they curve into the dot. */
   convergingCols:  number[];
-  /** New lanes allocated for merge parents (parents[1+]). */
-  mergeTargets:    { col: number; color: string }[];
+  /** New/existing slots allocated for merge parents (parents[1+]). */
+  mergeTargets:    MergeTarget[];
 }
 
 // ── Lane algorithm ────────────────────────────────────────────────────────────
 function computeLayout(commits: GraphCommit[]): { rows: RowLayout[]; maxCols: number } {
-  const lanes: (string | null)[] = [];
-  const laneColors: string[] = [];
-  let colorIdx = 0;
+  const lanes:  (string | null)[] = [];
+  const colors: string[]          = [];
+  let   colorIdx = 0;
 
-  const nextColor  = () => PALETTE[colorIdx++ % PALETTE.length];
-  const findFree   = () => { const i = lanes.indexOf(null); return i >= 0 ? i : lanes.length; };
-  const ensureSlot = (i: number) => {
-    while (lanes.length <= i) { lanes.push(null); laneColors.push(nextColor()); }
-  };
+  const alloc    = ()        => PALETTE[colorIdx++ % PALETTE.length];
+  const findFree = ()        => { const i = lanes.indexOf(null); return i >= 0 ? i : lanes.length; };
+  const ensure   = (i: number) => { while (lanes.length <= i) { lanes.push(null); colors.push(""); } };
 
   const rows: RowLayout[] = [];
   let maxCols = 1;
@@ -86,142 +89,134 @@ function computeLayout(commits: GraphCommit[]): { rows: RowLayout[]; maxCols: nu
   for (const commit of commits) {
     const { full_oid, parents } = commit;
 
-    // 1. Find all slots already tracking this commit
+    // 1. Which existing slots track this commit?
     const matchSlots: number[] = [];
     for (let i = 0; i < lanes.length; i++) {
       if (lanes[i] === full_oid) matchSlots.push(i);
     }
 
-    // 2. Assign commit column
-    let col: number;
-    let color: string;
+    // 2. Assign column + colour (single alloc, no double nextColor)
+    let col: number, color: string;
     if (matchSlots.length > 0) {
       col   = matchSlots[0];
-      color = laneColors[col];
+      color = colors[col];
     } else {
-      col = findFree();
-      ensureSlot(col);
-      color = nextColor();
-      laneColors[col] = color;
+      col   = findFree();
+      color = alloc();
     }
+    ensure(col);
+    colors[col] = color; // idempotent for existing, sets correct colour for new
 
-    // Snapshot incoming state (before mutation)
-    const incomingSlots  = [...lanes];
-    const incomingColors = [...laneColors];
+    // 3. Snapshot BEFORE (lanes already in correct state at this point)
+    const before       = [...lanes];
+    const beforeColors = [...colors];
 
-    // 3. Update primary slot → primary parent (or null if root commit)
-    ensureSlot(col);
-    lanes[col]      = parents[0] ?? null;
-    laneColors[col] = color;   // primary lineage keeps same colour
+    // 4a. Primary parent occupies col
+    lanes[col]  = parents[0] ?? null;
+    colors[col] = color;
 
-    // 4. Free converging slots (matchSlots[1..] all merged into col)
+    // 4b. Free converging slots
     const convergingCols = matchSlots.slice(1);
-    for (const ci of convergingCols) {
-      lanes[ci] = null;
-    }
+    for (const ci of convergingCols) lanes[ci] = null;
 
-    // 5. Allocate slots for merge parents (parents[1+])
-    const mergeTargets: { col: number; color: string }[] = [];
+    // 4c. Merge parents get new/existing slots
+    const mergeTargets: MergeTarget[] = [];
     for (let pi = 1; pi < parents.length; pi++) {
       const pOid  = parents[pi];
       const exist = lanes.indexOf(pOid);
       if (exist >= 0) {
-        mergeTargets.push({ col: exist, color: laneColors[exist] });
+        mergeTargets.push({ col: exist, color: colors[exist] });
       } else {
-        const newCol = findFree();
-        ensureSlot(newCol);
-        const nc = nextColor();
-        lanes[newCol]      = pOid;
-        laneColors[newCol] = nc;
-        mergeTargets.push({ col: newCol, color: nc });
+        const nc = findFree();
+        const c  = alloc();
+        ensure(nc);
+        lanes[nc]  = pOid;
+        colors[nc] = c;
+        mergeTargets.push({ col: nc, color: c });
       }
     }
 
-    // Trim trailing nulls (keeps maxCols tight)
+    // Trim trailing nulls
     while (lanes.length > 0 && lanes[lanes.length - 1] === null) {
       lanes.pop();
-      laneColors.pop();
+      colors.pop();
     }
 
-    const rowWidth = Math.max(col + 1, lanes.length, incomingSlots.length);
-    if (rowWidth > maxCols) maxCols = rowWidth;
+    const after       = [...lanes];
+    const afterColors = [...colors];
 
-    rows.push({ commit, col, color, incomingSlots, incomingColors, convergingCols, mergeTargets });
+    maxCols = Math.max(maxCols, col + 1, before.length, after.length);
+
+    rows.push({ commit, col, color, before, beforeColors, after, afterColors, convergingCols, mergeTargets });
   }
 
   return { rows, maxCols };
 }
 
-// ── Time helper ───────────────────────────────────────────────────────────────
-function relTime(ts: number): string {
-  const d = Math.floor(Date.now() / 1000) - ts;
-  if (d < 60)         return `${d}s ago`;
-  if (d < 3600)       return `${Math.floor(d / 60)}m ago`;
-  if (d < 86400)      return `${Math.floor(d / 3600)}h ago`;
-  if (d < 86400 * 30) return `${Math.floor(d / 86400)}d ago`;
-  return new Date(ts * 1000).toLocaleDateString();
-}
-
-// ── Per-row SVG paths ─────────────────────────────────────────────────────────
-function buildPaths(row: RowLayout, svgW: number): React.ReactElement[] {
-  const cx = row.col * COL_W + HALF;
+// ── SVG path builder ──────────────────────────────────────────────────────────
+function buildPaths(row: RowLayout): React.ReactElement[] {
+  const { before, beforeColors, after, col, color, convergingCols, mergeTargets, commit } = row;
+  const full_oid = commit.full_oid;
+  const cx = col * COL_W + HALF;
   const cy = ROW_H / 2;
+  const n  = Math.max(before.length, after.length, col + 1);
   const elems: React.ReactElement[] = [];
 
-  const nSlots = Math.max(row.incomingSlots.length, row.col + 1);
+  for (let i = 0; i < n; i++) {
+    const bOid  = before[i] ?? null;
+    const aOid  = after[i]  ?? null;
+    const bClr  = beforeColors[i] || "#555";
+    const x     = i * COL_W + HALF;
 
-  // 1. Pass-through and converging lines from above
-  for (let i = 0; i < nSlots; i++) {
-    const oid  = row.incomingSlots[i];
-    if (!oid || i === row.col) continue;
-
-    const x   = i * COL_W + HALF;
-    const clr = row.incomingColors[i] || "#666";
-
-    if (row.convergingCols.includes(i)) {
-      // Bezier curving from slot i (top) into the commit dot
-      const d = `M ${x} 0 C ${x} ${cy * 0.55} ${cx} ${cy * 0.85} ${cx} ${cy}`;
-      elems.push(
-        <path key={`conv-${i}`} d={d} stroke={clr} strokeWidth={1.5} fill="none" strokeLinecap="round" />
-      );
-    } else {
-      // Straight vertical pass-through for this lane
-      elems.push(
-        <line key={`pass-${i}`} x1={x} y1={0} x2={x} y2={ROW_H}
-              stroke={clr} strokeWidth={1.5} strokeLinecap="round" />
-      );
+    if (i === col) {
+      // Incoming top-half line (if this lane was tracking this commit)
+      if (bOid === full_oid) {
+        elems.push(<line key="in" x1={cx} y1={0} x2={cx} y2={cy}
+          stroke={color} strokeWidth={STROKE} strokeLinecap="round" />);
+      }
+      // Outgoing bottom-half line (if commit has a primary parent)
+      if (commit.parents.length > 0) {
+        elems.push(<line key="out" x1={cx} y1={cy} x2={cx} y2={ROW_H}
+          stroke={color} strokeWidth={STROKE} strokeLinecap="round" />);
+      }
+    } else if (convergingCols.includes(i)) {
+      // This lane was also tracking this commit — curve it into the dot
+      const d = `M ${x} 0 C ${x} ${cy * 0.55} ${cx} ${cy * 0.8} ${cx} ${cy}`;
+      elems.push(<path key={`conv-${i}`} d={d}
+        stroke={bClr} strokeWidth={STROKE} fill="none" strokeLinecap="round" />);
+    } else if (bOid && bOid === aOid) {
+      // Pure pass-through: same oid coming in and going out
+      elems.push(<line key={`pass-${i}`} x1={x} y1={0} x2={x} y2={ROW_H}
+        stroke={bClr} strokeWidth={STROKE} strokeLinecap="round" />);
+    } else if (bOid && !aOid) {
+      // Lane ends here for a reason other than converging — draw the top half
+      elems.push(<line key={`end-${i}`} x1={x} y1={0} x2={x} y2={cy}
+        stroke={bClr} strokeWidth={STROKE} strokeLinecap="round" />);
     }
+    // !bOid && aOid: newly allocated merge-parent lane — covered by mergeTargets bezier below
   }
 
-  // 2. Incoming line from above into the commit dot (primary lineage)
-  if (row.incomingSlots[row.col] === row.commit.full_oid) {
-    elems.push(
-      <line key="in" x1={cx} y1={0} x2={cx} y2={cy}
-            stroke={row.color} strokeWidth={1.5} strokeLinecap="round" />
-    );
+  // Merge-parent beziers (commit dot → bottom of merge lane)
+  for (const mt of mergeTargets) {
+    const tx     = mt.col * COL_W + HALF;
+    const ctrl1y = cy + (ROW_H - cy) * 0.45;
+    const ctrl2y = ROW_H - (ROW_H - cy) * 0.2;
+    const d = `M ${cx} ${cy} C ${cx} ${ctrl1y} ${tx} ${ctrl2y} ${tx} ${ROW_H}`;
+    elems.push(<path key={`mt-${mt.col}`} d={d}
+      stroke={mt.color} strokeWidth={STROKE} fill="none" strokeLinecap="round" />);
   }
 
-  // 3. Primary parent line going straight down (same column)
-  if (row.commit.parents.length > 0) {
-    elems.push(
-      <line key="out" x1={cx} y1={cy} x2={cx} y2={ROW_H}
-            stroke={row.color} strokeWidth={1.5} strokeLinecap="round" />
-    );
-  }
-
-  // 4. Merge-parent bezier curves going down and outward
-  for (const mt of row.mergeTargets) {
-    const tx = mt.col * COL_W + HALF;
-    const ctrlY1 = cy + (ROW_H - cy) * 0.45;
-    const ctrlY2 = ROW_H - (ROW_H - cy) * 0.25;
-    const d = `M ${cx} ${cy} C ${cx} ${ctrlY1} ${tx} ${ctrlY2} ${tx} ${ROW_H}`;
-    elems.push(
-      <path key={`mt-${mt.col}`} d={d} stroke={mt.color} strokeWidth={1.5} fill="none" strokeLinecap="round" />
-    );
-  }
-
-  void svgW; // width set on the <svg> element itself
   return elems;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function relTime(ts: number): string {
+  const d = Math.floor(Date.now() / 1000) - ts;
+  if (d < 60)         return `${d}s`;
+  if (d < 3600)       return `${Math.floor(d / 60)}m`;
+  if (d < 86400)      return `${Math.floor(d / 3600)}h`;
+  if (d < 86400 * 30) return `${Math.floor(d / 86400)}d`;
+  return new Date(ts * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 // ── Ref badge ─────────────────────────────────────────────────────────────────
@@ -230,26 +225,99 @@ function RefBadge({ name }: { name: string }) {
   const isTag    = name.startsWith("tag: ");
   const isRemote = !isHead && !isTag && name.includes("/");
   const label    = isTag ? name.slice(5) : name;
+  const short    = label.length > 18 ? label.slice(0, 17) + "…" : label;
 
   const cls = isHead
-    ? "bg-editor-red/20 text-editor-red border-editor-red/40"
+    ? "bg-red-500/20 text-red-400 border-red-500/40"
     : isTag
-    ? "bg-editor-yellow/20 text-editor-yellow border-editor-yellow/40"
+    ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/35"
     : isRemote
-    ? "bg-editor-comment/10 text-editor-comment border-editor-comment/30"
-    : "bg-editor-blue/15 text-editor-blue border-editor-blue/35";
+    ? "bg-white/5 text-editor-comment border-white/15"
+    : "bg-blue-500/15 text-blue-400 border-blue-500/30";
 
   return (
-    <span className={`inline-flex items-center shrink-0 px-1 rounded text-[9px] font-mono font-semibold border leading-[1.7] ${cls}`}>
-      {label}
+    <span title={label}
+      className={`inline-flex items-center shrink-0 px-1 py-px rounded text-[9px] font-mono font-semibold border leading-[1.6] ${cls}`}>
+      {short}
     </span>
+  );
+}
+
+// ── Single graph row ──────────────────────────────────────────────────────────
+function GraphRow({
+  row, svgW, selected, onSelect,
+}: {
+  row:      RowLayout;
+  svgW:     number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const cx    = row.col * COL_W + HALF;
+  const cy    = ROW_H / 2;
+  const paths = buildPaths(row);
+  const hasRefs = row.commit.refs.length > 0;
+
+  return (
+    <div
+      role="row"
+      className={`group flex items-center cursor-pointer select-none transition-colors ${
+        selected ? "bg-blue-500/10" : "hover:bg-white/[0.04]"
+      }`}
+      style={{ height: ROW_H, minHeight: ROW_H }}
+      onClick={onSelect}
+    >
+      {/* Graph SVG */}
+      <svg width={svgW} height={ROW_H} style={{ flexShrink: 0 }}>
+        {paths}
+        {/* Glow ring for commits with refs */}
+        {hasRefs && (
+          <circle cx={cx} cy={cy} r={DOT_R + 2.5} fill={row.color} opacity={0.2} />
+        )}
+        {/* Dot */}
+        <circle cx={cx} cy={cy} r={DOT_R}
+          fill={selected ? "#fff" : row.color}
+          stroke={row.color}
+          strokeWidth={selected ? 1.5 : 0}
+        />
+        {/* Inner highlight */}
+        <circle cx={cx - 1} cy={cy - 1} r={DOT_R * 0.38} fill="white" opacity={0.3} />
+      </svg>
+
+      {/* Commit info */}
+      <div className="flex-1 min-w-0 flex items-center gap-1 pl-1 pr-1.5 overflow-hidden">
+        {/* Ref badges — up to 2 visible */}
+        {row.commit.refs.slice(0, 2).map((r) => <RefBadge key={r} name={r} />)}
+        {row.commit.refs.length > 2 && (
+          <span className="text-[9px] text-editor-comment shrink-0 font-mono">
+            +{row.commit.refs.length - 2}
+          </span>
+        )}
+
+        {/* Message */}
+        <span className="text-[11px] truncate text-editor-fg/90 leading-none">
+          {row.commit.message}
+        </span>
+      </div>
+
+      {/* Right meta — always visible but dim, brighter on hover/select */}
+      <div className={`flex items-center gap-2 shrink-0 pr-2 transition-opacity ${
+        selected ? "opacity-100" : "opacity-30 group-hover:opacity-70"
+      }`}>
+        <span className="text-[9px] font-mono text-editor-comment">{row.commit.oid}</span>
+        <span className="text-[9px] text-editor-comment shrink-0">{relTime(row.commit.time)}</span>
+      </div>
+    </div>
   );
 }
 
 // ── Commit detail panel ───────────────────────────────────────────────────────
 function CommitDetail({
   commit, repoPath, onClose,
-}: { commit: GraphCommit; repoPath: string; onClose: () => void }) {
+}: {
+  commit:   GraphCommit;
+  repoPath: string;
+  onClose:  () => void;
+}) {
   const [files,   setFiles]   = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -264,25 +332,21 @@ function CommitDetail({
   const copyHash = () => navigator.clipboard.writeText(commit.full_oid);
 
   return (
-    <div
-      className="border-t border-editor-border shrink-0 overflow-y-auto"
-      style={{ maxHeight: 220, background: "rgb(var(--c-deep))" }}
-    >
+    <div className="border-t border-editor-border shrink-0 overflow-y-auto"
+         style={{ maxHeight: 200, background: "rgb(var(--c-deep))" }}>
       {/* Header */}
-      <div className="flex items-start justify-between px-3 py-2 gap-2">
+      <div className="flex items-start gap-2 px-3 pt-2 pb-1">
         <div className="flex-1 min-w-0">
-          <div className="text-xs text-editor-fg font-medium leading-snug">{commit.message}</div>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
-            <button
-              onClick={copyHash}
-              className="flex items-center gap-1 text-2xs font-mono text-editor-blue hover:text-editor-fg transition-colors"
-              title="Copy full hash"
-            >
+          <p className="text-xs text-editor-fg leading-snug mb-1">{commit.message}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={copyHash}
+              className="flex items-center gap-0.5 text-[10px] font-mono text-blue-400 hover:text-editor-fg transition-colors"
+              title="Copy full hash">
               <span>{commit.full_oid.slice(0, 12)}</span>
               <Copy size={9} />
             </button>
-            <span className="text-2xs text-editor-comment">{commit.author}</span>
-            <span className="text-2xs text-editor-comment ml-auto">{relTime(commit.time)}</span>
+            <span className="text-[10px] text-editor-comment">{commit.author}</span>
+            <span className="text-[10px] text-editor-comment ml-auto">{relTime(commit.time)}</span>
           </div>
           {commit.refs.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
@@ -290,32 +354,29 @@ function CommitDetail({
             </div>
           )}
         </div>
-        <button
-          onClick={onClose}
-          className="text-editor-comment hover:text-editor-fg transition-colors shrink-0 text-xs px-1"
-        >
+        <button onClick={onClose}
+          className="text-editor-comment hover:text-editor-fg transition-colors text-xs px-1 shrink-0 mt-0.5">
           ✕
         </button>
       </div>
 
-      {/* Changed files */}
-      <div className="border-t border-editor-border/40 pb-2">
-        <div className="px-3 py-1 text-2xs font-sans font-semibold uppercase tracking-widest text-editor-comment">
+      {/* Files */}
+      <div className="border-t border-editor-border/40 pb-1">
+        <p className="px-3 py-1 text-[9px] font-sans font-semibold uppercase tracking-widest text-editor-comment">
           {loading ? "Loading…" : `${files.length} file${files.length !== 1 ? "s" : ""} changed`}
-        </div>
+        </p>
         {files.map((entry, i) => {
           const parts  = entry.split("\t");
           const status = parts[0] ?? "";
           const path   = parts[1] ?? entry;
-          const color  =
-            status === "A" ? "text-editor-green"
-            : status === "D" ? "text-editor-red"
-            : "text-editor-yellow";
+          const clr    = status === "A" ? "text-editor-green"
+                       : status === "D" ? "text-editor-red"
+                       : "text-editor-yellow";
           return (
             <div key={i} className="flex items-center gap-2 px-3 py-0.5 hover:bg-editor-line transition-colors">
-              <span className={`w-3 text-2xs font-mono font-bold shrink-0 ${color}`}>{status || "M"}</span>
+              <span className={`w-3 text-[10px] font-mono font-bold shrink-0 ${clr}`}>{status || "M"}</span>
               <FileText size={9} className="text-editor-comment shrink-0" />
-              <span className="text-2xs text-editor-fg font-mono truncate">{path}</span>
+              <span className="text-[10px] text-editor-fg font-mono truncate">{path}</span>
             </div>
           );
         })}
@@ -324,79 +385,7 @@ function CommitDetail({
   );
 }
 
-// ── Main GraphRow component ───────────────────────────────────────────────────
-function GraphRow({
-  row, svgW, selected, onSelect,
-}: {
-  row:      RowLayout;
-  svgW:     number;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const cx = row.col * COL_W + HALF;
-  const cy = ROW_H / 2;
-  const paths = buildPaths(row, svgW);
-  const hasRefs = row.commit.refs.length > 0;
-
-  return (
-    <div
-      className={`flex items-center cursor-pointer transition-colors select-none ${
-        selected ? "bg-editor-blue/10" : "hover:bg-editor-line/60"
-      }`}
-      style={{ height: ROW_H, minHeight: ROW_H }}
-      onClick={onSelect}
-    >
-      {/* Graph SVG segment for this row */}
-      <svg
-        width={svgW}
-        height={ROW_H}
-        style={{ flexShrink: 0, overflow: "visible" }}
-      >
-        {paths}
-        {/* Outer glow ring for commits with refs */}
-        {hasRefs && (
-          <circle cx={cx} cy={cy} r={DOT_R + 2.5} fill={row.color} opacity={0.18} />
-        )}
-        {/* Commit dot */}
-        <circle
-          cx={cx} cy={cy} r={DOT_R}
-          fill={row.color}
-          stroke={selected ? "#fff" : "none"}
-          strokeWidth={1.5}
-        />
-        {/* Inner highlight */}
-        <circle cx={cx - 0.8} cy={cy - 0.8} r={DOT_R * 0.45} fill="white" opacity={0.35} />
-      </svg>
-
-      {/* Text section */}
-      <div className="flex-1 min-w-0 flex items-center gap-1.5 pl-1 pr-2 overflow-hidden">
-        {/* Ref badges */}
-        {row.commit.refs.slice(0, 3).map((r) => <RefBadge key={r} name={r} />)}
-        {row.commit.refs.length > 3 && (
-          <span className="text-2xs text-editor-comment shrink-0">+{row.commit.refs.length - 3}</span>
-        )}
-        {/* Commit message */}
-        <span className={`text-xs truncate ${selected ? "text-editor-fg" : "text-editor-fg/90"}`}>
-          {row.commit.message}
-        </span>
-      </div>
-
-      {/* Author + time — only visible on hover / selection */}
-      <div
-        className={`flex items-center gap-2 shrink-0 pr-2 text-2xs text-editor-comment ${
-          selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-        }`}
-      >
-        <CommitIcon size={9} className="shrink-0" />
-        <span className="font-mono">{row.commit.oid}</span>
-        <span className="hidden xl:block truncate max-w-[70px]">{row.commit.author.split(" ")[0]}</span>
-        <span className="shrink-0">{relTime(row.commit.time)}</span>
-      </div>
-    </div>
-  );
-}
-
-// ── GitGraph (main export) ────────────────────────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────────────────
 export function GitGraph() {
   const workspaceRoot = useStore((s) => s.workspaceRoot);
 
@@ -416,7 +405,8 @@ export function GitGraph() {
       .then((commits) => {
         const { rows: r, maxCols } = computeLayout(commits);
         setRows(r);
-        setSvgW(maxCols * COL_W);
+        // +1 col of padding so the rightmost dot isn't flush against the edge
+        setSvgW((maxCols + 1) * COL_W);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
@@ -425,15 +415,13 @@ export function GitGraph() {
   useEffect(() => { load(limit); }, [load, limit]);
 
   const handleSelect = (row: RowLayout) => {
-    setSelected((prev) =>
-      prev?.full_oid === row.commit.full_oid ? null : row.commit
-    );
+    setSelected((prev) => prev?.full_oid === row.commit.full_oid ? null : row.commit);
   };
 
   if (!workspaceRoot) {
     return (
       <div className="flex-1 flex items-center justify-center text-editor-comment text-xs">
-        Open a folder to see the graph
+        Open a folder to view the graph
       </div>
     );
   }
@@ -442,48 +430,41 @@ export function GitGraph() {
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Toolbar */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-editor-border shrink-0">
-        <span className="text-2xs text-editor-comment font-sans flex-1">
+        <span className="text-[10px] text-editor-comment font-sans flex-1">
           {loading ? "Loading…" : `${rows.length} commits`}
         </span>
         <select
           value={limit}
           onChange={(e) => setLimit(Number(e.target.value))}
-          className="text-2xs bg-transparent text-editor-comment border border-editor-border rounded px-1 py-0.5 outline-none hover:text-editor-fg transition-colors"
+          className="text-[10px] bg-transparent text-editor-comment border border-editor-border/60 rounded px-1 py-px outline-none hover:text-editor-fg cursor-pointer"
         >
           <option value={100}>100</option>
           <option value={200}>200</option>
           <option value={500}>500</option>
           <option value={1000}>1000</option>
         </select>
-        <button
-          onClick={() => load(limit)}
+        <button onClick={() => load(limit)}
           className="text-editor-comment hover:text-editor-fg transition-colors"
-          title="Refresh"
-        >
+          title="Refresh">
           <RefreshCw size={11} className={loading ? "animate-spin" : ""} />
         </button>
       </div>
 
-      {/* Error state */}
+      {/* Error */}
       {error && (
-        <div className="px-3 py-2 text-xs text-editor-red border-b border-editor-border shrink-0">
+        <div className="px-3 py-2 text-xs text-editor-red border-b border-editor-border shrink-0 font-mono">
           {error}
         </div>
       )}
 
-      {/* Graph list — scrollable */}
-      <div
-        ref={listRef}
-        className="flex-1 overflow-auto"
-        style={{ scrollbarWidth: "thin" }}
-      >
-        {rows.length === 0 && !loading && (
+      {/* Graph list */}
+      <div ref={listRef} className="flex-1 overflow-auto" style={{ scrollbarWidth: "thin" }}>
+        {rows.length === 0 && !loading ? (
           <div className="flex items-center justify-center h-full text-editor-comment text-xs">
             No commits yet
           </div>
-        )}
-        <div className="group">
-          {rows.map((row) => (
+        ) : (
+          rows.map((row) => (
             <GraphRow
               key={row.commit.full_oid}
               row={row}
@@ -491,21 +472,20 @@ export function GitGraph() {
               selected={selected?.full_oid === row.commit.full_oid}
               onSelect={() => handleSelect(row)}
             />
-          ))}
-        </div>
+          ))
+        )}
 
-        {/* Load more */}
         {rows.length >= limit && (
           <button
             onClick={() => setLimit((l) => l + 200)}
-            className="w-full py-2 text-2xs text-editor-comment hover:text-editor-fg hover:bg-editor-line transition-colors"
+            className="w-full py-2 text-[10px] text-editor-comment hover:text-editor-fg hover:bg-editor-line transition-colors font-sans"
           >
             Load 200 more…
           </button>
         )}
       </div>
 
-      {/* Commit detail panel — shown when a commit is selected */}
+      {/* Commit detail */}
       {selected && (
         <CommitDetail
           commit={selected}

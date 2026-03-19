@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{files, git, pty, spotify};
+use commands::{files, git, pty, spotify, updater};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::Emitter;
 
@@ -24,7 +24,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(pty::PtyState::new())
+        .manage(updater::PendingUpdate::new())
         .setup(|app| {
             let h = app.handle();
 
@@ -197,6 +199,10 @@ pub fn run() {
             // Spotify
             spotify::spotify_osascript,
             spotify::spotify_open_url,
+            // Updater
+            updater::get_app_version,
+            updater::check_update,
+            updater::install_update,
         ])
         .run(tauri::generate_context!())
         .expect("error running nova");
