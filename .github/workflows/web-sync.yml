@@ -3,27 +3,26 @@ name: Web — Sync Release Assets
 # ─── ARCHITECTURE NOTE (read before editing) ──────────────────────────────────
 #
 #  nova (this repo, PRIVATE)
-#  ├── src-tauri/          ← Tauri/Rust desktop app
-#  ├── src/                ← React frontend
-#  └── web/                ← Product website source  ◄── you are here
+#  ├── src-tauri/     ← Tauri/Rust desktop app
+#  ├── src/           ← React frontend
+#  └── web/           ← Product website source (HTML/assets only, no binaries)
 #
 #  nova_web (PUBLIC repo, mugiwaraluffy56/nova_web)
-#  └── mirror of web/      ← served as the public website + updater endpoint
+#  ├── downloads/     ← DMG/installers served directly to users  ← written here
+#  ├── latest.json    ← Tauri updater endpoint                   ← written here
+#  └── ...            ← rest mirrored from web/ by web-deploy.yml
 #
-#  Downloads on the website point directly to:
-#    https://github.com/mugiwaraluffy56/nova/releases/latest
+#  This workflow clones nova_web, downloads the DMG + latest.json from the
+#  private nova release, and pushes them directly to nova_web.
+#  Large binaries NEVER touch nova's git history.
 #
-#  The Tauri in-app updater inside Nova points to:
+#  Tauri in-app updater reads:
 #    https://raw.githubusercontent.com/mugiwaraluffy56/nova_web/main/latest.json
-#  That file is fetched here from the private nova release (needs NOVA_TOKEN)
-#  and committed into web/ so web-deploy.yml can push it to nova_web publicly.
-#
-#  DO NOT fetch latest.json in web-deploy.yml — it needs NOVA_TOKEN which
-#  should not be added to a deploy-only workflow.
 #
 #  Required secrets (nova → Settings → Secrets → Actions):
-#    NOVA_TOKEN  — GitHub PAT with `repo` scope (reads private nova releases)
-#    NOVA_REPO   — e.g. mugiwaraluffy56/nova
+#    NOVA_TOKEN    — PAT with `repo` scope → reads private nova releases
+#    NOVA_REPO     — e.g. mugiwaraluffy56/nova-editor
+#    NOVA_WEB_PAT  — PAT with `repo` scope → pushes to nova_web
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
@@ -32,17 +31,23 @@ on:
     - cron: '0 */6 * * *'   # poll every 6 hours
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync:
-    name: Pull latest.json into web/
+    name: Push release assets → nova_web
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Clone nova_web
+        env:
+          NOVA_WEB_PAT: ${{ secrets.NOVA_WEB_PAT }}
+        run: |
+          git clone --depth 1 \
+            "https://x-access-token:$NOVA_WEB_PAT@github.com/mugiwaraluffy56/nova_web.git" \
+            nova_web
 
-      - name: Fetch latest release and sync latest.json
-        id: sync
+      - name: Fetch latest release metadata
+        id: meta
         env:
           NOVA_TOKEN: ${{ secrets.NOVA_TOKEN }}
           NOVA_REPO:  ${{ secrets.NOVA_REPO }}
@@ -54,40 +59,82 @@ jobs:
 
           TAG=$(echo "$RELEASE" | jq -r '.tag_name')
 
-          # Skip if already synced
-          if [ -f "web/.synced_tag" ] && [ "$(cat web/.synced_tag)" = "$TAG" ]; then
+          # Skip if nova_web already has this release
+          if [ -f "nova_web/downloads/.synced_tag" ] && \
+             [ "$(cat nova_web/downloads/.synced_tag)" = "$TAG" ]; then
             echo "Already synced $TAG — nothing to do."
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Download latest.json (Tauri update manifest)
-          MANIFEST_URL=$(echo "$RELEASE" | jq -r \
-            '.assets[] | select(.name == "latest.json") | .url' | head -1)
+          echo "RELEASE_JSON<<EOF" >> "$GITHUB_ENV"
+          echo "$RELEASE"          >> "$GITHUB_ENV"
+          echo "EOF"               >> "$GITHUB_ENV"
 
-          if [ -z "$MANIFEST_URL" ] || [ "$MANIFEST_URL" = "null" ]; then
-            echo "No latest.json in release $TAG — skipping."
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "changed=true"     >> "$GITHUB_OUTPUT"
+
+      - name: Download DMG + latest.json into nova_web
+        if: steps.meta.outputs.changed == 'true'
+        env:
+          NOVA_TOKEN: ${{ secrets.NOVA_TOKEN }}
+          TAG:        ${{ steps.meta.outputs.tag }}
+        run: |
+          mkdir -p nova_web/downloads
+
+          download_asset() {
+            local PATTERN="$1" DEST="$2"
+            local URL NAME
+            URL=$(echo "$RELEASE_JSON" | jq -r \
+              ".assets[] | select(.name | test(\"$PATTERN\")) | .url" | head -1)
+            NAME=$(echo "$RELEASE_JSON" | jq -r \
+              ".assets[] | select(.name | test(\"$PATTERN\")) | .name" | head -1)
+            if [ -z "$URL" ] || [ "$URL" = "null" ]; then
+              echo "⚠  No asset matching '$PATTERN' in $TAG — skipping."
+              return 0
+            fi
+            echo "↓  $NAME → $DEST"
+            curl -sfL \
+              -H "Authorization: token $NOVA_TOKEN" \
+              -H "Accept: application/octet-stream" \
+              "$URL" -o "$DEST"
+          }
+
+          # ── macOS aarch64 DMG ─────────────────────────────────────────────
+          DMG_NAME=$(echo "$RELEASE_JSON" | jq -r \
+            '.assets[] | select(.name | test("aarch64.*\\.dmg$")) | .name' | head -1)
+
+          if [ -z "$DMG_NAME" ] || [ "$DMG_NAME" = "null" ]; then
+            echo "No aarch64 DMG found in $TAG — aborting."
+            exit 1
           fi
 
-          echo "↓ latest.json (release $TAG)"
-          curl -sfL \
-            -H "Authorization: token $NOVA_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            "$MANIFEST_URL" -o "web/latest.json"
+          download_asset "aarch64.*\\.dmg$" "nova_web/downloads/$DMG_NAME"
 
-          echo "$TAG" > web/.synced_tag
+          # Remove stale DMGs
+          find nova_web/downloads/ -name "*.dmg" ! -name "$DMG_NAME" -delete
 
-          echo "tag=$TAG"      >> "$GITHUB_OUTPUT"
-          echo "changed=true"  >> "$GITHUB_OUTPUT"
+          # ── Tauri update manifest ─────────────────────────────────────────
+          download_asset "^latest\\.json$" "nova_web/latest.json"
 
-      - name: Commit synced manifest
-        if: steps.sync.outputs.changed == 'true'
+          # ── Update HTML download links ────────────────────────────────────
+          sed -i \
+            "s|downloads/nova_[^\"']*_aarch64\.dmg|downloads/$DMG_NAME|g" \
+            nova_web/index.html nova_web/manual.html 2>/dev/null || true
+
+          # Mark synced
+          echo "$TAG" > nova_web/downloads/.synced_tag
+
+          echo "dmg_name=$DMG_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push to nova_web
+        if: steps.meta.outputs.changed == 'true'
         run: |
+          cd nova_web
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add web/latest.json web/.synced_tag
-          git diff --staged --quiet && exit 0
-          git commit -m "release: sync nova ${{ steps.sync.outputs.tag }}"
+          git add downloads/ latest.json index.html manual.html
+          git diff --staged --quiet && echo "Nothing to commit." && exit 0
+          git commit -m "release: sync nova ${{ steps.meta.outputs.tag }}"
           git push
