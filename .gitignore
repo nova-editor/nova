@@ -3,7 +3,5 @@ Cargo.lock
 .ted.toml
 *.log
 
-# Website release artifacts — served from nova_web, never committed here
-web/downloads/
-web/latest.json
-web/.synced_tag
+# Vercel build output
+.vercel

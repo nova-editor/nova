@@ -245,9 +245,12 @@ function TerminalPane({
   useEffect(() => { rOnTermReady.current = onTermReady;  }, [onTermReady]);
 
   // Cleanup on unmount — pty_kill is the ONLY place we kill the session.
+  // inited.current is reset so that if React remounts the component (e.g. Strict
+  // Mode double-invoke, or a parent key change) the pane re-initialises correctly.
   useEffect(() => {
     const id = session.id;
     return () => {
+      inited.current = false;          // allow re-init on remount
       roRef.current?.disconnect();
       unlistenRef.current?.();
       oscDisposables.current.forEach((d) => d.dispose());
@@ -371,23 +374,35 @@ function TerminalPane({
     listen<string>(`pty-output-${session.id}`, (ev) => termRef.current?.write(ev.payload))
       .then((fn) => { unlistenRef.current = fn; });
 
-    // Fit and spawn AFTER fonts are ready so we get accurate dimensions.
-    // This is the fix for the "wrong cols on spawn" bug where the PTY was
-    // started with xterm's uninitialised 80×24 instead of the actual size.
-    document.fonts.ready.then(() => {
-      if (!fitRef.current || !termRef.current) return;
+    // Fit and spawn after the browser has done at least one layout pass so xterm
+    // gets accurate container dimensions (not 0×0 from an unsettled flex layout).
+    // We use a cancellation flag so that if React's Strict Mode cleanup runs before
+    // this rAF fires, the abandoned callback does nothing instead of double-spawning.
+    let spawnCancelled = false;
+    const doSpawn = () => {
+      if (spawnCancelled || !fitRef.current || !termRef.current) return;
+      const container = containerRef.current;
+      // If layout hasn't settled yet (container is zero-size), retry next frame.
+      if (container && (container.offsetWidth === 0 || container.offsetHeight === 0)) {
+        requestAnimationFrame(doSpawn);
+        return;
+      }
       fitRef.current.fit();
       if (focused) termRef.current.focus();
       const { rows, cols } = termRef.current;
       invoke("pty_spawn", {
         sessionId: session.id,
         cwd:       initCwd,
-        rows, cols,
+        rows,
+        cols,
         shell:     session.shell || null,
       }).catch((err) => {
         termRef.current?.writeln(`\x1b[31mFailed to start shell: ${err}\x1b[0m`);
       });
-    });
+    };
+    requestAnimationFrame(doSpawn);
+
+    return () => { spawnCancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hidden, visible]);
 
@@ -519,18 +534,21 @@ export function Terminal({ visible }: TerminalProps) {
     invoke<string[]>("get_shells").then(setShells).catch(() => setShells(["/bin/zsh"]));
   }, []);
 
-  // Create initial session after shells load — guarded by a ref so it runs exactly once
-  // even if `shells` changes identity (e.g. React Strict Mode double-invoke).
+  // Create a session whenever one is needed and none exists:
+  //   • On first load (shells just resolved, sessions is empty)
+  //   • When the terminal is reopened after the user closed all sessions
+  // The hasCreatedInitial ref gates this so it only fires when actually needed;
+  // removeSession resets it to false when the last session is deleted.
   const hasCreatedInitial = useRef(false);
   useEffect(() => {
-    if (hasCreatedInitial.current || shells.length === 0) return;
+    if (hasCreatedInitial.current || shells.length === 0 || sessions.length > 0 || !visible) return;
     hasCreatedInitial.current = true;
     const id = crypto.randomUUID();
     const s: Session = { id, shell: shells[0], label: "", title: "", cwd: "", exitCode: null };
     setSessions([s]);
     setMainActiveId(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shells]);
+  }, [shells, visible, sessions.length]);
 
   const makeSession = useCallback((shell?: string): Session => ({
     id:       crypto.randomUUID(),
@@ -568,51 +586,46 @@ export function Terminal({ visible }: TerminalProps) {
     setSplitFocused(true);
   }, [makeSession]);
 
-  // Flag set by removeSession when the last session is closed; a separate effect
-  // calls toggle() outside of the setSessions updater (safe for Concurrent mode).
-  const shouldClosePanel = useRef(false);
-  useEffect(() => {
-    if (shouldClosePanel.current) { shouldClosePanel.current = false; toggle(); }
-  });
-
   const removeSession = useCallback((id: string) => {
     delete termRef_map.current[id];
-    setSearchAddons((p) => { const next = { ...p }; delete next[id]; return next; });
+    setSearchAddons((p) => { const n = { ...p }; delete n[id]; return n; });
 
-    // Capture current values via refs so this callback never goes stale.
+    // Read current state via stable refs — no stale closure risk.
+    const curSessions     = sessionsRef.current;
     const curSplitId      = splitIdRef.current;
     const curMainActiveId = mainActiveIdRef.current;
+    const next            = curSessions.filter((s) => s.id !== id);
 
-    setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== id);
+    if (next.length === 0) {
+      // Last session closed: clear state so the terminal starts fresh next open.
+      setSessions([]);
+      setMainActiveId("");
+      setSplitId(null);
+      setSplitFocused(false);
+      hasCreatedInitial.current = false; // allow a new session to be created on reopen
+      toggle();
+      return;
+    }
 
-      if (next.length === 0) {
-        // Last session closed — close the panel after this render.
-        shouldClosePanel.current = true;
-        return prev; // keep sessions so the pane doesn't flash empty before toggle
-      }
+    setSessions(next);
 
-      if (id === curSplitId) {
-        // Closed the split pane
+    if (id === curSplitId) {
+      setSplitId(null);
+      setSplitFocused(false);
+    } else if (id === curMainActiveId) {
+      const nonSplit = next.filter((s) => s.id !== curSplitId);
+      if (nonSplit.length > 0) {
+        setMainActiveId(nonSplit.at(-1)!.id);
+      } else if (curSplitId) {
+        // Only the split remains — promote it to main
+        setMainActiveId(curSplitId);
         setSplitId(null);
         setSplitFocused(false);
-      } else if (id === curMainActiveId) {
-        // Closed the active main tab — pick next tab (exclude split from candidates)
-        const nonSplit = next.filter((s) => s.id !== curSplitId);
-        if (nonSplit.length > 0) {
-          setMainActiveId(nonSplit.at(-1)!.id);
-        } else if (curSplitId) {
-          // Only the split remains — promote it to main and close split
-          setMainActiveId(curSplitId);
-          setSplitId(null);
-          setSplitFocused(false);
-        }
       }
-      return next;
-    });
-  // deps are empty: all state is read via refs
+    }
+  // toggle is a stable Zustand action; all other state read via refs
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [toggle]);
 
   const updateSession = useCallback((id: string, patch: Partial<Session>) => {
     setSessions((p) => p.map((s) => s.id === id ? { ...s, ...patch } : s));
