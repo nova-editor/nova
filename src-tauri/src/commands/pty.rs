@@ -42,7 +42,14 @@ pub async fn pty_spawn(
         .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())?;
 
-    let shell = shell.unwrap_or_else(|| std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string()));
+    let shell = shell.unwrap_or_else(|| {
+        std::env::var("SHELL").unwrap_or_else(|_| {
+            #[cfg(target_os = "windows")]
+            { "powershell.exe".to_string() }
+            #[cfg(not(target_os = "windows"))]
+            { "/bin/sh".to_string() }
+        })
+    });
     let mut cmd = CommandBuilder::new(&shell);
     cmd.cwd(&cwd);
     cmd.env("TERM", "xterm-256color");

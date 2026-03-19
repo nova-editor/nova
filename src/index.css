@@ -92,9 +92,14 @@
 
 /* ── Xterm.js ───────────────────────────────────────────────────────────── */
 .xterm { height: 100%; padding: 6px 12px; box-sizing: border-box; }
-.xterm-viewport { overflow: hidden !important; }
-.xterm-screen  { display: block; }
-.xterm .xterm-viewport { border-radius: 0; }
+/* Force transparency so the panel's frosted-glass shows through all xterm layers */
+.xterm-viewport,
+.xterm .xterm-viewport { overflow: hidden !important; background: transparent !important; background-color: transparent !important; }
+.xterm-screen,
+.xterm-screen canvas { background: transparent !important; }
+/* DOM renderer row divs — each row must be transparent for the glass to show */
+.xterm-rows,
+.xterm-rows > div { background: transparent !important; background-color: transparent !important; }
 .xterm-scroll-area { scrollbar-width: none; }
 
 /* ── Animations ─────────────────────────────────────────────────────────── */

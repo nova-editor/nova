@@ -95,7 +95,13 @@ const TERM_THEMES: Record<string, ITheme> = {
     brightBlack:"#676E95", brightRed:"#F07178", brightGreen:"#C3E88D", brightYellow:"#FFCB6B", brightBlue:"#82AAFF", brightMagenta:"#C792EA", brightCyan:"#89DDFF", brightWhite:"#FFFFFF",
   },
 };
-const getTermTheme = (name: string): ITheme => TERM_THEMES[name] ?? TERM_THEMES.atomDark;
+const getTermTheme = (name: string): ITheme => {
+  const t = TERM_THEMES[name] ?? TERM_THEMES.atomDark;
+  // Always use transparent background so the panel's backdrop-filter shows through.
+  // When no wallpaper: panel is solid dark (--surface-alpha=1). Same look, no cost.
+  // When wallpaper active: frosted glass effect shows through correctly.
+  return { ...t, background: "transparent" };
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function shortPath(p: string): string {
@@ -278,6 +284,7 @@ function TerminalPane({
       cursorBlink:           true,
       scrollback,
       allowProposedApi:      true,
+      allowTransparency:     true,
       macOptionIsMeta:       true,
       rightClickSelectsWord: true,
     });
@@ -371,8 +378,17 @@ function TerminalPane({
     roRef.current = ro;
 
     // PTY output → xterm
+    // Use a cancellation flag so that if the component unmounts before the
+    // listen() promise resolves, we immediately call the unlisten function
+    // rather than leaking it. Without this, quick mount/unmount cycles
+    // (e.g. React StrictMode or panel toggles) accumulate duplicate listeners
+    // and cause each PTY byte to be written N times → "ccccclear" style bugs.
+    let listenCancelled = false;
     listen<string>(`pty-output-${session.id}`, (ev) => termRef.current?.write(ev.payload))
-      .then((fn) => { unlistenRef.current = fn; });
+      .then((fn) => {
+        if (listenCancelled) { fn(); return; } // already unmounted — clean up immediately
+        unlistenRef.current = fn;
+      });
 
     // Fit and spawn after the browser has done at least one layout pass so xterm
     // gets accurate container dimensions (not 0×0 from an unsettled flex layout).
@@ -402,7 +418,7 @@ function TerminalPane({
     };
     requestAnimationFrame(doSpawn);
 
-    return () => { spawnCancelled = true; };
+    return () => { spawnCancelled = true; listenCancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hidden, visible]);
 
@@ -452,8 +468,9 @@ function TerminalPane({
     <div
       ref={containerRef}
       style={{
-        position: "absolute", inset: 0, overflow: "hidden",
-        display: (!hidden && visible) ? "block" : "none",
+        position: "absolute", top: 0, right: 0, bottom: 0, left: 0,
+        overflow: "hidden",
+        display: (hidden || !visible) ? "none" : "block",
       }}
     />
   );
@@ -488,11 +505,12 @@ function ShellMenu({
 interface TerminalProps { visible: boolean }
 
 export function Terminal({ visible }: TerminalProps) {
-  const toggle         = useStore((s) => s.toggleTerminal);
-  const workspaceRoot  = useStore((s) => s.workspaceRoot);
-  const termSettings   = useStore((s) => s.settings.terminal);
-  const updateSettings = useStore((s) => s.updateSettings);
-  const themeName      = useStore((s) => s.settings.editor.theme);
+  const toggle            = useStore((s) => s.toggleTerminal);
+  const workspaceRoot     = useStore((s) => s.workspaceRoot);
+  const termSettings      = useStore((s) => s.settings.terminal);
+  const updateSettings    = useStore((s) => s.updateSettings);
+  const themeName         = useStore((s) => s.settings.editor.theme);
+  const setTerminalHeight = useStore((s) => s.setTerminalHeight);
 
   const [shells,       setShells]       = useState<string[]>([]);
   const [sessions,     setSessions]     = useState<Session[]>([]);
@@ -512,6 +530,7 @@ export function Terminal({ visible }: TerminalProps) {
   sessionsRef.current     = sessions;
   const [height,       setHeight]       = useState(260);
   const [maximized,    setMaximized]    = useState(false);
+  const [isDragging,   setIsDragging]   = useState(false);
   const [renamingId,   setRenamingId]   = useState<string | null>(null);
   const [renameVal,    setRenameVal]    = useState("");
   const [showSearch,   setShowSearch]   = useState(false);
@@ -523,6 +542,9 @@ export function Terminal({ visible }: TerminalProps) {
   const cwd    = workspaceRoot || ".";
   const maxH   = Math.floor(window.innerHeight * 0.7);
   const panelH = maximized ? maxH : height;
+
+  // Sync store when maximize toggles (drag syncs on mouseup only — not on every pixel)
+  useEffect(() => { setTerminalHeight(panelH); }, [maximized]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The session that currently owns keyboard focus (for context menu / clear)
   const focusedSessionId = splitFocused && splitId ? splitId : mainActiveId;
@@ -698,12 +720,23 @@ export function Terminal({ visible }: TerminalProps) {
   const onDragStart = useCallback((e: React.MouseEvent) => {
     if (maximized) return;
     e.preventDefault();
+    setIsDragging(true);
     const sy = e.clientY; const sh = height;
-    const onMove = (ev: MouseEvent) => setHeight(Math.max(120, Math.min(700, sh + (sy - ev.clientY))));
-    const onUp   = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    const onMove = (ev: MouseEvent) => {
+      // Only update local height during drag — store update on mouseup so
+      // Spotify animates once smoothly after resize, not on every pixel.
+      setHeight(Math.max(120, Math.min(700, sh + (sy - ev.clientY))));
+    };
+    const onUp = (ev: MouseEvent) => {
+      const finalH = Math.max(120, Math.min(700, sh + (sy - ev.clientY)));
+      setIsDragging(false);
+      setTerminalHeight(finalH);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [height, maximized]);
+  }, [height, maximized, setTerminalHeight]);
 
   // Clear the focused terminal
   const clearActive = useCallback(() => {
@@ -750,11 +783,11 @@ export function Terminal({ visible }: TerminalProps) {
       style={{
         height:               panelH,
         display:              visible ? "flex" : "none",
-        background:           "rgb(var(--c-deep) / var(--surface-alpha, 0.82))",
-        backdropFilter:       "blur(24px) saturate(1.6)",
-        WebkitBackdropFilter: "blur(24px) saturate(1.6)",
-        borderTop:            "1px solid rgb(var(--c-border) / 0.6)",
-        transition:           "height 0.12s ease",
+        background:           "rgb(var(--c-blue) / 0.06)",
+        backdropFilter:       "blur(20px) saturate(1.4)",
+        WebkitBackdropFilter: "blur(20px) saturate(1.4)",
+        borderTop:            "1px solid rgba(255,255,255,0.08)",
+        transition:           isDragging ? "none" : "height 0.12s ease",
       }}
     >
       {/* ── Drag handle ─────────────────────────────────────────────────── */}
@@ -784,8 +817,7 @@ export function Terminal({ visible }: TerminalProps) {
 
           {/* Main sessions (tab-switched) */}
           <div
-            className="flex flex-col min-h-0 overflow-hidden"
-            style={{ position: "absolute", inset: 0, right: splitId ? "50%" : 0 }}
+            style={{ position: "absolute", top: 0, left: 0, bottom: 0, right: splitId ? "50%" : 0 }}
             onMouseDown={() => { if (splitFocused) setSplitFocused(false); }}
           >
             {mainSessions.map((s) => (
@@ -827,7 +859,7 @@ export function Terminal({ visible }: TerminalProps) {
               />
               <div
                 className="flex flex-col overflow-hidden"
-                style={{ position: "absolute", inset: 0, left: "50%" }}
+                style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: "50%" }}
                 onMouseDown={() => { if (!splitFocused) setSplitFocused(true); }}
               >
                 {/* Split mini-header */}
@@ -859,29 +891,31 @@ export function Terminal({ visible }: TerminalProps) {
                     <X size={9} />
                   </button>
                 </div>
-                <TerminalPane
-                  key={splitSession.id}
-                  session={splitSession}
-                  hidden={false}
-                  focused={splitFocused}
-                  visible={visible}
-                  height={panelH}
-                  initCwd={cwd}
-                  fontSize={termSettings.fontSize}
-                  lineHeight={termSettings.lineHeight}
-                  scrollback={termSettings.scrollback}
-                  themeName={themeName}
-                  showSearch={showSearch && splitFocused}
-                  onHideSearch={() => setShowSearch(false)}
-                  onAddonReady={(a) => setSearchAddons((p) => ({ ...p, [splitSession.id]: a }))}
-                  onTermReady={(t) => { termRef_map.current[splitSession.id] = t; }}
-                  onTitle={(t) => updateSession(splitSession.id, { title: t, exitCode: null })}
-                  onCwd={(d) => updateSession(splitSession.id, { cwd: d })}
-                  onExitCode={(c) => updateSession(splitSession.id, { exitCode: c })}
-                  onZoom={zoom}
-                  onClose={() => removeSession(splitSession.id)}
-                  onSplit={() => { /* nested split not supported */ }}
-                />
+                <div style={{ position: "relative", flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  <TerminalPane
+                    key={splitSession.id}
+                    session={splitSession}
+                    hidden={false}
+                    focused={splitFocused}
+                    visible={visible}
+                    height={panelH}
+                    initCwd={cwd}
+                    fontSize={termSettings.fontSize}
+                    lineHeight={termSettings.lineHeight}
+                    scrollback={termSettings.scrollback}
+                    themeName={themeName}
+                    showSearch={showSearch && splitFocused}
+                    onHideSearch={() => setShowSearch(false)}
+                    onAddonReady={(a) => setSearchAddons((p) => ({ ...p, [splitSession.id]: a }))}
+                    onTermReady={(t) => { termRef_map.current[splitSession.id] = t; }}
+                    onTitle={(t) => updateSession(splitSession.id, { title: t, exitCode: null })}
+                    onCwd={(d) => updateSession(splitSession.id, { cwd: d })}
+                    onExitCode={(c) => updateSession(splitSession.id, { exitCode: c })}
+                    onZoom={zoom}
+                    onClose={() => removeSession(splitSession.id)}
+                    onSplit={() => { /* nested split not supported */ }}
+                  />
+                </div>
               </div>
             </>
           )}
@@ -893,7 +927,7 @@ export function Terminal({ visible }: TerminalProps) {
           style={{
             width:       160,
             borderLeft:  "1px solid rgb(var(--c-border) / 0.5)",
-            background:  "rgb(var(--c-sidebar) / var(--surface-alpha, 0.7))",
+            background:  "rgb(var(--c-deep) / 0.15)",
           }}
         >
           {/* Sidebar header: title + action buttons */}
@@ -1034,9 +1068,9 @@ export function Terminal({ visible }: TerminalProps) {
             style={{ height: 28, borderTop: "1px solid rgb(var(--c-border) / 0.3)" }}
           >
             <button
-              onClick={clearActive}
-              title="Clear terminal (⌘K)"
-              className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"
+              onClick={() => removeSession(focusedSessionId)}
+              title="Delete terminal"
+              className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/[0.08] text-editor-comment hover:text-editor-red"
             >
               <Trash2 size={11} />
             </button>

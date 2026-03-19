@@ -178,6 +178,12 @@ export function Editor({ tabIndex, showMdPreview = true }: EditorProps) {
             },
           }),
           EditorView.updateListener.of((update) => {
+            // Update cursor position on any selection or doc change
+            if (update.docChanged || update.selectionSet) {
+              const head = update.state.selection.main.head;
+              const line = update.state.doc.lineAt(head);
+              useStore.getState().setCursor(line.number, head - line.from + 1);
+            }
             if (!update.docChanged) return;
             const content = update.state.doc.toString();
             // Write to tabContentMap synchronously — always current before save fires

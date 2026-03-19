@@ -102,24 +102,63 @@ pub async fn read_file_base64(path: String) -> Result<String, String> {
 /// Return all interactive shells listed in /etc/shells.
 #[tauri::command]
 pub async fn get_shells() -> Vec<String> {
-    let default_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    match tokio::fs::read_to_string("/etc/shells").await {
-        Ok(content) => {
-            let mut shells: Vec<String> = content
-                .lines()
-                .map(|l| l.trim().to_string())
-                .filter(|l| !l.is_empty() && !l.starts_with('#') && l.starts_with('/'))
-                .collect();
-            // Put the default shell first
-            if let Some(pos) = shells.iter().position(|s| s == &default_shell) {
-                shells.swap(0, pos);
-            } else {
-                shells.insert(0, default_shell);
-            }
-            shells.dedup();
-            shells
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, probe for available shells in order of preference.
+        // Each entry is (display path, candidates to search in PATH / absolute paths).
+        let candidates: &[&str] = &[
+            "powershell.exe",
+            "pwsh.exe",       // PowerShell 7+
+            "cmd.exe",
+            "bash.exe",       // Git Bash / WSL
+        ];
+
+        let mut found: Vec<String> = candidates
+            .iter()
+            .filter_map(|&name| {
+                // Accept absolute paths that exist, or names resolvable via PATH.
+                let p = std::path::Path::new(name);
+                if p.is_absolute() {
+                    if p.exists() { Some(name.to_string()) } else { None }
+                } else {
+                    // Walk PATH entries
+                    std::env::var("PATH").ok().and_then(|path_var| {
+                        std::env::split_paths(&path_var).find_map(|dir| {
+                            let full = dir.join(name);
+                            if full.exists() { Some(full.to_string_lossy().into_owned()) } else { None }
+                        })
+                    })
+                }
+            })
+            .collect();
+
+        if found.is_empty() {
+            // Absolute last resort — cmd.exe is always present on Windows
+            found.push("cmd.exe".to_string());
         }
-        Err(_) => vec![default_shell],
+        found
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let default_shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        match tokio::fs::read_to_string("/etc/shells").await {
+            Ok(content) => {
+                let mut shells: Vec<String> = content
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty() && !l.starts_with('#') && l.starts_with('/'))
+                    .collect();
+                if let Some(pos) = shells.iter().position(|s| s == &default_shell) {
+                    shells.swap(0, pos);
+                } else {
+                    shells.insert(0, default_shell);
+                }
+                shells.dedup();
+                shells
+            }
+            Err(_) => vec![default_shell],
+        }
     }
 }
 

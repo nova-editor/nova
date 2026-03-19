@@ -207,6 +207,19 @@ interface AppState {
   // ── Spotify ───────────────────────────────────────────────────────────────
   showSpotify:   boolean;
   toggleSpotify: () => void;
+
+  // ── Git panel width (changes when graph tab is active) ────────────────────
+  gitPanelWidth:    number;
+  setGitPanelWidth: (w: number) => void;
+
+  // ── Terminal height (for Spotify tile reactive positioning) ───────────────
+  terminalHeight:    number;
+  setTerminalHeight: (h: number) => void;
+
+  // ── Cursor position (for status bar LOC) ─────────────────────────────────
+  cursorLine: number;
+  cursorCol:  number;
+  setCursor:  (line: number, col: number) => void;
 }
 
 function detectLanguage(path: string): string {
@@ -462,6 +475,19 @@ export const useStore = create<AppState>((set, get) => ({
   // ── Spotify ───────────────────────────────────────────────────────────
   showSpotify:   false,
   toggleSpotify: () => set((s) => ({ showSpotify: !s.showSpotify })),
+
+  // ── Git panel width ────────────────────────────────────────────────────
+  gitPanelWidth:    280,
+  setGitPanelWidth: (w) => set({ gitPanelWidth: w }),
+
+  // ── Terminal height (for Spotify tile reactive positioning) ───────────
+  terminalHeight:    260,
+  setTerminalHeight: (h) => set({ terminalHeight: h }),
+
+  // ── Cursor position (for status bar LOC) ─────────────────────────────
+  cursorLine: 1,
+  cursorCol:  1,
+  setCursor:  (line, col) => set({ cursorLine: line, cursorCol: col }),
 
   // ── Presets ───────────────────────────────────────────────────────────
   presets: (() => {

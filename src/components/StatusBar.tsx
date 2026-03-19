@@ -2,10 +2,13 @@ import { GitBranch, Circle } from "lucide-react";
 import { useStore } from "../store";
 
 export function StatusBar() {
-  const tabs      = useStore((s) => s.tabs);
-  const activeIdx = useStore((s) => s.activeTabIdx);
-  const branch    = useStore((s) => s.gitBranch);
-  const vimMode   = useStore((s) => s.vimMode);
+  const tabs       = useStore((s) => s.tabs);
+  const activeIdx  = useStore((s) => s.activeTabIdx);
+  const branch     = useStore((s) => s.gitBranch);
+  const vimMode    = useStore((s) => s.vimMode);
+  const vimEnabled = useStore((s) => s.settings.editor.vimEnabled);
+  const cursorLine = useStore((s) => s.cursorLine);
+  const cursorCol  = useStore((s) => s.cursorCol);
 
   const tab = tabs[activeIdx];
 
@@ -30,10 +33,10 @@ export function StatusBar() {
 
       {/* Right */}
       <div className="flex items-center gap-3">
-        {tab && (
+        {tab && vimEnabled && (
           <span className={`px-1.5 py-0.5 rounded text-2xs font-bold tracking-widest uppercase ${
             vimMode === "normal"
-              ? "bg-editor-blue/20 text-editor-blue"
+              ? "bg-editor-accent/15 text-editor-accent"
               : "bg-editor-green/20 text-editor-green"
           }`}>
             {vimMode}
@@ -42,6 +45,7 @@ export function StatusBar() {
 
         {tab && (
           <>
+            <span className="tabular-nums">Ln {cursorLine}, Col {cursorCol}</span>
             <span>{tab.language}</span>
             <span>UTF-8</span>
           </>

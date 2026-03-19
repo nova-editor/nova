@@ -134,6 +134,35 @@ const SP_DARK = {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
+// Gap between tile edge and each surrounding panel — same value = equal distances.
+const GAP = 8;
+
+// Original anchor: right and bottom edges of the tile when nothing is open.
+// Tile right  = window.innerWidth  - 20  (20px from screen right)
+// Tile bottom = window.innerHeight - 20  (20px from screen bottom / statusbar)
+// pos.x = tileRight - TILE_W, pos.y = tileBottom - TILE_H (estimates)
+// We derive pos.{x,y} from these edge anchors so both gaps stay equal.
+const TILE_W = 320;
+const TILE_H = 298;  // visualiser(56) + header(30) + art+info(75) + progress(40) + controls(65) + volume(32)
+
+function safeHome(
+  showTerminal: boolean, showGitPanel: boolean,
+  showFileTree: boolean, showSettings: boolean, showHelp: boolean,
+  sidebarWidth: number, terminalHeight: number, gitPanelWidth: number,
+): { x: number; y: number } {
+  const rightOff  = Math.max(showGitPanel ? gitPanelWidth : 0, (showSettings || showHelp) ? 312 : 0);
+  const bottomOff = showTerminal ? terminalHeight + 24 : 0;  // actual terminal height + statusbar(24)
+
+  // Anchor: where the tile's right / bottom edge should land
+  const tileRight  = rightOff  > 0 ? window.innerWidth  - rightOff  - GAP : window.innerWidth  - 20;
+  const tileBottom = bottomOff > 0 ? window.innerHeight - bottomOff - GAP : window.innerHeight - 20;
+
+  return {
+    x: Math.max(showFileTree ? sidebarWidth + GAP : 0, tileRight  - TILE_W),
+    y: Math.max(60,                                    tileBottom - TILE_H),
+  };
+}
+
 export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
   const [state,       setState]      = useState<SpotifyState | null>(null);
   const [notRunning,  setNotRunning] = useState(false);
@@ -144,12 +173,28 @@ export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
     return (saved === "editor" || saved === "spotify" || saved === "white") ? saved : "editor";
   });
   const spotifyTransparent = useStore((s) => s.settings.spotifyTransparent);
-  const DEFAULT_POS = { x: window.innerWidth - 340, y: window.innerHeight - 320 };
-  const [pos, setPos] = useState(DEFAULT_POS);
+
+  // Panel states — Spotify tile avoids these areas
+  const showTerminal   = useStore((s) => s.showTerminal);
+  const showGitPanel   = useStore((s) => s.showGitPanel);
+  const showFileTree   = useStore((s) => s.showFileTree);
+  const showSettings   = useStore((s) => s.showSettings);
+  const showHelp       = useStore((s) => s.showHelp);
+  const sidebarWidth   = useStore((s) => s.settings.sidebarWidth);
+  const terminalHeight = useStore((s) => s.terminalHeight);
+  const gitPanelWidth  = useStore((s) => s.gitPanelWidth);
+
+  const getSafeHome = useCallback(
+    () => safeHome(showTerminal, showGitPanel, showFileTree, showSettings, showHelp, sidebarWidth, terminalHeight, gitPanelWidth),
+    [showTerminal, showGitPanel, showFileTree, showSettings, showHelp, sidebarWidth, terminalHeight, gitPanelWidth],
+  );
+
+  const [pos, setPos] = useState({ x: window.innerWidth - 340, y: window.innerHeight - 320 });
   const offsetRef = useRef({ x: 0, y: 0 });
-  const targetRef = useRef({ x: pos.x, y: pos.y });
-  const velRef    = useRef({ x: 0, y: 0 });
-  const rafRef    = useRef(0);
+  const targetRef = useRef({ x: window.innerWidth - 340, y: window.innerHeight - 320 });
+  const velRef       = useRef({ x: 0, y: 0 });
+  const rafRef       = useRef(0);
+  const animatingRef = useRef(false);
 
   const cycleMode = () => setSpMode(m => {
     const next: SpMode = m === "editor" ? "spotify" : m === "spotify" ? "white" : "editor";
@@ -198,10 +243,15 @@ export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
     setQuery(""); setShowSearch(false);
   };
 
-  const startLoop = () => {
+  const startLoop = useCallback((forceRestart = false) => {
+    // If already animating toward a (possibly updated) target, let it converge — don't restart.
+    // forceRestart=true is used after a drag cancel so velocity gets cleared first.
+    if (animatingRef.current && !forceRestart) return;
     cancelAnimationFrame(rafRef.current);
-    const stiffness = 0.022;
-    const damping   = 0.92;
+    animatingRef.current = true;
+    // Snappy spring — iOS-style: high stiffness, moderate damping, no overshoot
+    const stiffness = 0.14;
+    const damping   = 0.78;
     const loop = () => {
       setPos(cur => {
         const dx = targetRef.current.x - cur.x;
@@ -210,29 +260,43 @@ export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
         velRef.current.y = velRef.current.y * damping + dy * stiffness;
         const nx = cur.x + velRef.current.x;
         const ny = cur.y + velRef.current.y;
-        const settled = Math.abs(velRef.current.x) < 0.05 && Math.abs(velRef.current.y) < 0.05;
-        if (!settled) rafRef.current = requestAnimationFrame(loop);
-        return settled ? cur : { x: nx, y: ny };
+        const settled = Math.abs(dx) < 0.4 && Math.abs(dy) < 0.4 &&
+                        Math.abs(velRef.current.x) < 0.1 && Math.abs(velRef.current.y) < 0.1;
+        if (settled) { animatingRef.current = false; return targetRef.current; }
+        rafRef.current = requestAnimationFrame(loop);
+        return { x: nx, y: ny };
       });
     };
     rafRef.current = requestAnimationFrame(loop);
-  };
+  }, []);
+
+  // Animate tile to safe position when panels open/close — skip on first mount
+  // so the tile opens at its default position, not the current safe home.
+  const panelsMounted = useRef(false);
+  useEffect(() => {
+    if (!panelsMounted.current) { panelsMounted.current = true; return; }
+    targetRef.current = getSafeHome();
+    startLoop();
+  }, [getSafeHome, startLoop]);
 
   const onDoubleClick = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button,input")) return;
-    targetRef.current = { x: window.innerWidth - 340, y: window.innerHeight - 320 };
-    startLoop();
+    targetRef.current = getSafeHome();
+    startLoop(true);
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button,input")) return;
     e.preventDefault();
+    cancelAnimationFrame(rafRef.current);
+    animatingRef.current = false;
+    velRef.current = { x: 0, y: 0 };
     offsetRef.current = { x: e.clientX - pos.x, y: e.clientY - pos.y };
     document.body.style.userSelect = "none";
     const onMove = (ev: MouseEvent) => {
       ev.preventDefault();
       targetRef.current = { x: ev.clientX - offsetRef.current.x, y: ev.clientY - offsetRef.current.y };
-      startLoop();
+      startLoop(true);
     };
     const onUp = () => {
       document.body.style.userSelect = "";
@@ -251,10 +315,11 @@ export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
       position: "fixed", left: pos.x, top: pos.y, zIndex: 9999,
       width: 320, cursor: "grab", userSelect: "none",
       background: bg,
-      backdropFilter: spotifyTransparent ? "none" : T ? "none" : "blur(32px) saturate(2)",
+      backdropFilter: spotifyTransparent ? "blur(20px) saturate(1.4)" : T ? "none" : "blur(32px) saturate(2)",
+      WebkitBackdropFilter: spotifyTransparent ? "blur(20px) saturate(1.4)" : T ? "none" : "blur(32px) saturate(2)",
       border: `1px solid ${border}`,
       borderRadius: 16, overflow: "hidden",
-      boxShadow: spotifyTransparent ? "none" : "0 20px 60px rgba(0,0,0,0.65)",
+      boxShadow: spotifyTransparent ? "0 8px 32px rgba(0,0,0,0.4)" : "0 20px 60px rgba(0,0,0,0.65)",
       fontFamily: "'JetBrains Mono', monospace", color: fg,
     }}>
 

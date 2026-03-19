@@ -357,7 +357,7 @@ function ChangesTab() {
           onClick={doCommit}
           disabled={!canCommit}
           className="mt-1.5 w-full py-1 rounded text-2xs font-sans font-semibold bg-editor-accent text-white
-                     hover:bg-editor-accent/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                     hover:bg-editor-accent/80 disabled:cursor-not-allowed transition-colors"
         >
           {committing
             ? "Committing…"
@@ -504,7 +504,7 @@ function StashTab() {
           <button
             onClick={() => setShowInput(true)}
             className="w-full flex items-center justify-center gap-1.5 py-1 rounded text-2xs font-sans
-                       text-editor-comment hover:text-editor-fg hover:bg-white/5 transition-colors border border-editor-border"
+                       text-editor-fg hover:bg-white/5 transition-colors border border-editor-border"
           >
             <Layers size={11} />
             Stash Changes
@@ -743,10 +743,16 @@ function BranchesTab() {
 
 // ── GitPanel ──────────────────────────────────────────────────────────────────
 export function GitPanel() {
-  const gitBranch  = useStore((s) => s.gitBranch);
-  const gitStatus  = useStore((s) => s.gitStatus);
-  const refreshGit = useStore((s) => s.refreshGit);
+  const gitBranch      = useStore((s) => s.gitBranch);
+  const gitStatus      = useStore((s) => s.gitStatus);
+  const refreshGit     = useStore((s) => s.refreshGit);
+  const setGitPanelWidth = useStore((s) => s.setGitPanelWidth);
   const [tab, setTab] = useState<Tab>("changes");
+
+  // Keep store in sync so Spotify tile always gaps from the real panel width
+  useEffect(() => {
+    setGitPanelWidth(tab === "graph" ? 360 : 280);
+  }, [tab, setGitPanelWidth]);
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: "changes",  label: "Changes",  badge: gitStatus.length > 0 ? gitStatus.length : undefined },
