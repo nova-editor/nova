@@ -110,7 +110,7 @@
       line-height: 2;
       letter-spacing: .01em;
     }
-    .hero-ctas { display: flex; align-items: center; justify-content: center; gap: .65rem; }
+    .hero-ctas { display: flex; align-items: center; justify-content: center; gap: .65rem; flex-wrap: wrap; }
     .cta-primary {
       display: inline-flex; align-items: center; gap: .4rem;
       background: #fff; color: #000;
@@ -127,6 +127,20 @@
       transition: border-color .15s, color .15s, transform .15s;
     }
     .cta-ghost:hover { border-color: var(--bhi); color: var(--fgb); transform: translateY(-1px); }
+    .dl-platforms {
+      margin-top: .9rem;
+      display: flex; align-items: center; justify-content: center; gap: .5rem;
+      flex-wrap: wrap;
+    }
+    .dl-platform-label { font-size: .68rem; color: var(--fgd); font-family: 'JetBrains Mono', monospace; }
+    .dl-platform-link {
+      font-size: .68rem; font-family: 'JetBrains Mono', monospace;
+      color: var(--fgm); padding: .2rem .55rem;
+      border: 1px solid var(--border); border-radius: 3px;
+      transition: border-color .15s, color .15s;
+    }
+    .dl-platform-link:hover { border-color: var(--bhi); color: var(--fgb); }
+    .dl-platform-link.current { border-color: rgba(255,255,255,0.18); color: var(--fgb); }
 
     /* ── CAROUSEL ───────────────────────────────────────── */
     .carousel-section {
@@ -385,7 +399,7 @@
     <a href="#shortcuts">Shortcuts</a>
     <a href="manual.html">Manual</a>
   </div>
-  <a href="downloads/nova_LATEST_aarch64.dmg" class="nav-dl" download>
+  <a href="#download" class="nav-dl" id="nav-dl-btn">
     <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     Download
   </a>
@@ -393,18 +407,26 @@
 
 <!-- HERO -->
 <section class="hero">
-  <div class="hero-tag">macOS · Tauri · CodeMirror</div>
+  <div class="hero-tag">Windows · macOS · Linux · Tauri · CodeMirror</div>
   <h1 class="hero-h1"><span class="dim">write code.</span><br /><em>not configuration.</em></h1>
-  <p class="hero-sub">vim · 16 themes · terminal · git · spotify · presets<br />native macOS — zero config files</p>
-  <div class="hero-ctas">
-    <a href="downloads/nova_LATEST_aarch64.dmg" class="cta-primary" download>
-      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Download for macOS
-    </a>
-    <a href="manual.html" class="cta-ghost">
-      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
-      Read the manual
-    </a>
+  <p class="hero-sub">vim · 16 themes · terminal · git · spotify · presets<br />native desktop — zero config files</p>
+  <div id="download">
+    <div class="hero-ctas">
+      <a id="dl-primary" href="downloads/nova_LATEST_aarch64.dmg" class="cta-primary" download>
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span id="dl-primary-label">Download</span>
+      </a>
+      <a href="manual.html" class="cta-ghost">
+        <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>
+        Read the manual
+      </a>
+    </div>
+    <div class="dl-platforms">
+      <span class="dl-platform-label">other platforms —</span>
+      <a id="dl-mac"   class="dl-platform-link" href="downloads/nova_LATEST_aarch64.dmg" download>macOS</a>
+      <a id="dl-win"   class="dl-platform-link" href="downloads/nova_LATEST_x64-setup.exe" download>Windows</a>
+      <a id="dl-linux" class="dl-platform-link" href="downloads/nova_LATEST_amd64.AppImage" download>Linux</a>
+    </div>
   </div>
 </section>
 
@@ -668,7 +690,7 @@
         </svg>
       </div>
       <div class="stack-name">Tauri</div>
-      <div class="stack-role">Native macOS shell — file I/O, window management, OS menus, PTY.</div>
+      <div class="stack-role">Native desktop shell — file I/O, window management, OS menus, PTY.</div>
       <div class="stack-lang">Rust</div>
     </div>
     <div class="stack-card">
@@ -752,11 +774,55 @@
     <a href="#features">Features</a>
     <a href="#themes">Themes</a>
     <a href="#shortcuts">Shortcuts</a>
-    <a href="downloads/nova_LATEST_aarch64.dmg" download>Download</a>
+    <a href="#download">Download</a>
   </div>
 </footer>
 
 <script>
+  // ── OS detection ──────────────────────────────────────────────────────────
+  const ua      = navigator.userAgent.toLowerCase();
+  const isMac   = /mac os x/.test(ua) && !/iphone|ipad/.test(ua);
+  const isWin   = /windows/.test(ua);
+  const isLinux = /linux/.test(ua) && !/android/.test(ua);
+
+  // ── OS-aware download buttons ─────────────────────────────────────────────
+  (function () {
+    const primary      = document.getElementById('dl-primary');
+    const primaryLabel = document.getElementById('dl-primary-label');
+    const macLink      = document.getElementById('dl-mac');
+    const winLink      = document.getElementById('dl-win');
+    const linuxLink    = document.getElementById('dl-linux');
+    const navBtn       = document.getElementById('nav-dl-btn');
+
+    if (isWin) {
+      primary.href             = winLink.href;
+      primaryLabel.textContent = 'Download for Windows';
+      winLink.classList.add('current');
+      navBtn.href              = winLink.href;
+      navBtn.setAttribute('download', '');
+    } else if (isLinux) {
+      primary.href             = linuxLink.href;
+      primaryLabel.textContent = 'Download for Linux';
+      linuxLink.classList.add('current');
+      navBtn.href              = linuxLink.href;
+      navBtn.setAttribute('download', '');
+    } else {
+      primary.href             = macLink.href;
+      primaryLabel.textContent = 'Download for macOS';
+      macLink.classList.add('current');
+      navBtn.href              = macLink.href;
+      navBtn.setAttribute('download', '');
+    }
+  })();
+
+  // ── OS-aware modifier key (⌘ on Mac, Ctrl on Windows/Linux) ──────────────
+  (function () {
+    if (isMac) return; // already showing ⌘, nothing to do
+    document.querySelectorAll('kbd').forEach(k => {
+      if (k.textContent.trim() === '⌘') k.textContent = 'Ctrl';
+    });
+  })();
+
   // scroll reveal
   const io = new IntersectionObserver(entries =>
     entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }),

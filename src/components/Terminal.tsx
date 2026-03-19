@@ -451,8 +451,10 @@ function TerminalPane({
   return (
     <div
       ref={containerRef}
-      className="flex-1 min-h-0 min-w-0"
-      style={{ display: (!hidden && visible) ? "block" : "none", overflow: "hidden" }}
+      style={{
+        position: "absolute", inset: 0, overflow: "hidden",
+        display: (!hidden && visible) ? "block" : "none",
+      }}
     />
   );
 }
@@ -541,14 +543,14 @@ export function Terminal({ visible }: TerminalProps) {
   // removeSession resets it to false when the last session is deleted.
   const hasCreatedInitial = useRef(false);
   useEffect(() => {
-    if (hasCreatedInitial.current || shells.length === 0 || sessions.length > 0 || !visible) return;
+    if (hasCreatedInitial.current || shells.length === 0 || sessionsRef.current.length > 0 || !visible) return;
     hasCreatedInitial.current = true;
     const id = crypto.randomUUID();
     const s: Session = { id, shell: shells[0], label: "", title: "", cwd: "", exitCode: null };
     setSessions([s]);
     setMainActiveId(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shells, visible, sessions.length]);
+  }, [shells, visible]);
 
   const makeSession = useCallback((shell?: string): Session => ({
     id:       crypto.randomUUID(),
@@ -597,12 +599,14 @@ export function Terminal({ visible }: TerminalProps) {
     const next            = curSessions.filter((s) => s.id !== id);
 
     if (next.length === 0) {
-      // Last session closed: clear state so the terminal starts fresh next open.
+      // Last session closed: clear state and close the panel.
+      // hasCreatedInitial is NOT reset here — resetting it while visible=true
+      // would race with the initial-session effect and spawn an unwanted session.
+      // A separate effect resets it only once visible=false is confirmed.
       setSessions([]);
       setMainActiveId("");
       setSplitId(null);
       setSplitFocused(false);
-      hasCreatedInitial.current = false; // allow a new session to be created on reopen
       toggle();
       return;
     }
@@ -630,6 +634,14 @@ export function Terminal({ visible }: TerminalProps) {
   const updateSession = useCallback((id: string, patch: Partial<Session>) => {
     setSessions((p) => p.map((s) => s.id === id ? { ...s, ...patch } : s));
   }, []);
+
+  // When the last session is deleted and the panel is now hidden, allow the
+  // initial-session effect to create a fresh session next time it opens.
+  // Doing this here (not in removeSession) prevents a race where sessions=[]
+  // and visible=true coincide for a single render frame and trigger early creation.
+  useEffect(() => {
+    if (sessions.length === 0 && !visible) hasCreatedInitial.current = false;
+  }, [sessions.length, visible]);
 
   // New workspace → new session.
   // sessions.length is intentionally NOT a dep — it caused the effect to re-fire
@@ -736,11 +748,13 @@ export function Terminal({ visible }: TerminalProps) {
     <div
       className="flex flex-col shrink-0"
       style={{
-        height:    panelH,
-        display:   visible ? "flex" : "none",
-        background: "rgb(var(--c-deep) / var(--surface-alpha, 1))",
-        borderTop: "1px solid rgb(var(--c-border))",
-        transition: "height 0.12s ease",
+        height:               panelH,
+        display:              visible ? "flex" : "none",
+        background:           "rgb(var(--c-deep) / var(--surface-alpha, 0.82))",
+        backdropFilter:       "blur(24px) saturate(1.6)",
+        WebkitBackdropFilter: "blur(24px) saturate(1.6)",
+        borderTop:            "1px solid rgb(var(--c-border) / 0.6)",
+        transition:           "height 0.12s ease",
       }}
     >
       {/* ── Drag handle ─────────────────────────────────────────────────── */}
@@ -752,222 +766,34 @@ export function Terminal({ visible }: TerminalProps) {
         <div className="h-full w-full opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: "rgb(var(--c-accent))" }} />
       </div>
 
-      {/* ── Header / Tab bar ────────────────────────────────────────────── */}
-      <div
-        className="flex items-center shrink-0 select-none"
-        style={{ height: 36, background: "rgb(var(--c-sidebar) / var(--surface-alpha, 1))", borderBottom: "1px solid rgb(var(--c-border))" }}
-      >
-        {/* Session tabs */}
-        <div className="flex items-center flex-1 overflow-x-auto min-w-0 h-full" style={{ scrollbarWidth: "none" }}>
-          {mainSessions.map((s, i) => {
-            const isAct = s.id === mainActiveId;
-            return (
-              <div
-                key={s.id}
-                onClick={() => { setMainActiveId(s.id); setSplitFocused(false); }}
-                onDoubleClick={() => { setRenamingId(s.id); setRenameVal(s.label); }}
-                className="group/tab relative flex items-center gap-1.5 h-full cursor-pointer select-none shrink-0 border-r border-editor-border transition-colors"
-                style={{
-                  padding:    "0 10px 0 12px",
-                  background: isAct ? "rgb(var(--c-bg) / var(--surface-alpha, 1))" : "transparent",
-                  color:      isAct ? "rgb(var(--c-fg))" : "rgb(var(--c-comment))",
-                  fontSize:   11,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  minWidth:   0,
-                  maxWidth:   200,
-                }}
-              >
-                {/* Exit code indicator */}
-                {s.exitCode !== null && (
-                  s.exitCode === 0
-                    ? <CheckCircle2 size={9} className="shrink-0 text-editor-green" />
-                    : <XCircle size={9} className="shrink-0 text-editor-red" />
-                )}
-                {/* Activity dot */}
-                {s.exitCode === null && (
-                  <span style={{
-                    width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
-                    background: isAct ? "rgb(var(--c-green))" : "rgb(var(--c-border))",
-                    transition: "background 0.2s",
-                  }} />
-                )}
+      {/* ── Main body: [pane area] + [right sidebar] ────────────────────── */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
-                {renamingId === s.id ? (
-                  <input
-                    ref={renameRef} value={renameVal}
-                    onChange={(e) => setRenameVal(e.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(e) => { if(e.key==="Enter"){ e.preventDefault(); commitRename(); } if(e.key==="Escape") setRenamingId(null); }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-24 bg-transparent outline-none text-editor-fg"
-                    style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
-                  />
-                ) : (
-                  <span className="truncate">{tabLabel(s, i)}</span>
-                )}
-
-                <button
-                  onClick={(e) => { e.stopPropagation(); removeSession(s.id); }}
-                  className="opacity-0 group-hover/tab:opacity-60 hover:!opacity-100 transition-opacity rounded hover:text-editor-red flex items-center shrink-0 ml-1"
-                  title="Close (⌘W)"
-                >
-                  <X size={9} />
-                </button>
-              </div>
-            );
-          })}
-
-          {/* New session button with shell dropdown */}
-          <div className="relative shrink-0 flex items-center h-full">
-            <button
-              onClick={() => addSession()}
-              className="flex items-center justify-center w-8 h-full transition-colors hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg"
-              title="New terminal (⌘T)"
-            >
-              <Plus size={13} />
-            </button>
-            <button
-              onClick={() => setShellMenu((v) => !v)}
-              className="flex items-center justify-center w-5 h-full transition-colors hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg"
-              title="Select shell profile"
-            >
-              <ChevronDown size={10} />
-            </button>
-            {shellMenu && shells.length > 0 && (
-              <ShellMenu
-                shells={shells}
-                onSelect={(sh) => addSession(sh)}
-                onClose={() => setShellMenu(false)}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Right actions */}
-        <div className="flex items-center shrink-0 gap-0.5 pr-1.5">
-          <button onClick={() => setShowSearch((v) => !v)} title="Search (⌘F)"
-            className={`flex items-center justify-center w-6 h-6 rounded transition-colors ${showSearch ? "bg-editor-accent/15 text-editor-accent" : "hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg"}`}>
-            <Search size={12} />
-          </button>
-          <button onClick={clearActive} title="Clear (⌘K)"
-            className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg">
-            <Trash2 size={12} />
-          </button>
-          <button onClick={() => splitTerminal()} title="Split pane (⌘D)"
-            className={`flex items-center justify-center w-6 h-6 rounded transition-colors ${splitId ? "bg-editor-accent/15 text-editor-accent" : "hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg"}`}>
-            <SplitSquareHorizontal size={12} />
-          </button>
-          <button onClick={() => setMaximized((v) => !v)} title={maximized ? "Restore" : "Maximize"}
-            className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg">
-            {maximized ? <Minimize2 size={12} /> : <Maximize2 size={12} />}
-          </button>
-          <button onClick={toggle} title="Hide terminal (⌘J)"
-            className="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-white/[0.06] text-editor-comment hover:text-editor-fg">
-            <ChevronDown size={13} />
-          </button>
-        </div>
-      </div>
-
-      {/* ── Pane area ───────────────────────────────────────────────────── */}
-      <div
-        className="flex flex-1 min-h-0 overflow-hidden relative"
-        onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-      >
-        {/* Search overlay — bound to the focused pane's SearchAddon */}
-        {showSearch && (
-          <SearchBar
-            addon={searchAddons[focusedSessionId] ?? null}
-            onClose={() => setShowSearch(false)}
-          />
-        )}
-
-        {/* ── Left pane: tab-switched main sessions ──────────────────────── */}
-        {/* All sessions are mounted so switching tabs is instant.           */}
-        {/* Only the mainActiveId session has hidden=false (visible).        */}
-        {/* Clicking anywhere here returns focus to the main pane.           */}
+        {/* ── Pane area ─────────────────────────────────────────────────── */}
         <div
-          className="flex flex-col min-h-0 overflow-hidden"
-          style={{ flex: splitId ? "0 0 50%" : "1 1 100%" }}
-          onMouseDown={() => { if (splitFocused) setSplitFocused(false); }}
+          className="flex flex-1 min-h-0 overflow-hidden relative"
+          onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
         >
-          {mainSessions.map((s) => (
-            <TerminalPane
-              key={s.id}
-              session={s}
-              hidden={s.id !== mainActiveId}
-              focused={!splitFocused && s.id === mainActiveId}
-              visible={visible}
-              height={panelH}
-              initCwd={cwd}
-              fontSize={termSettings.fontSize}
-              lineHeight={termSettings.lineHeight}
-              scrollback={termSettings.scrollback}
-              themeName={themeName}
-              showSearch={showSearch && s.id === focusedSessionId}
-              onHideSearch={() => setShowSearch(false)}
-              onAddonReady={(a) => setSearchAddons((p) => ({ ...p, [s.id]: a }))}
-              onTermReady={(t) => { termRef_map.current[s.id] = t; }}
-              onTitle={(t) => updateSession(s.id, { title: t, exitCode: null })}
-              onCwd={(d) => updateSession(s.id, { cwd: d })}
-              onExitCode={(c) => updateSession(s.id, { exitCode: c })}
-              onZoom={zoom}
-              onClose={() => removeSession(s.id)}
-              onSplit={() => splitTerminal()}
+          {/* Search overlay */}
+          {showSearch && (
+            <SearchBar
+              addon={searchAddons[focusedSessionId] ?? null}
+              onClose={() => setShowSearch(false)}
             />
-          ))}
-          {/* Placeholder shown when no main sessions exist (shouldn't happen normally) */}
-          {mainSessions.length === 0 && (
-            <div className="flex-1 flex items-center justify-center text-editor-comment text-xs">No terminal sessions</div>
           )}
-        </div>
 
-        {/* ── Right pane: split terminal ─────────────────────────────────── */}
-        {/* Clicking here gives keyboard focus to the split without hiding   */}
-        {/* the left pane — mainActiveId stays unchanged.                    */}
-        {splitId && splitSession && (
-          <>
-            <div className="w-[1px] shrink-0" style={{ background: "rgb(var(--c-border))" }} />
-            <div
-              className="flex flex-col flex-1 min-h-0 overflow-hidden"
-              onMouseDown={() => { if (!splitFocused) setSplitFocused(true); }}
-            >
-              {/* Split mini-header */}
-              <div
-                className="flex items-center justify-between shrink-0 px-3 border-b border-editor-border"
-                style={{
-                  height:     24,
-                  background: splitFocused
-                    ? "rgb(var(--c-bg) / var(--surface-alpha, 1))"
-                    : "rgb(var(--c-deep) / var(--surface-alpha, 1))",
-                  fontSize:   10,
-                  color:      "rgb(var(--c-comment))",
-                  fontFamily: "'JetBrains Mono', monospace",
-                }}
-              >
-                <span className="flex items-center gap-1.5">
-                  <span style={{
-                    width: 5, height: 5, borderRadius: "50%",
-                    background: splitFocused ? "rgb(var(--c-green))" : "rgb(var(--c-border))",
-                  }} />
-                  {splitSession.title || shellName(splitSession.shell)}
-                  {splitSession.cwd ? ` · ${splitSession.cwd}` : ""}
-                </span>
-                <button
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={() => removeSession(splitSession.id)}
-                  className="text-editor-comment hover:text-editor-red transition-colors"
-                >
-                  <X size={9} />
-                </button>
-              </div>
+          {/* Main sessions (tab-switched) */}
+          <div
+            className="flex flex-col min-h-0 overflow-hidden"
+            style={{ position: "absolute", inset: 0, right: splitId ? "50%" : 0 }}
+            onMouseDown={() => { if (splitFocused) setSplitFocused(false); }}
+          >
+            {mainSessions.map((s) => (
               <TerminalPane
-                key={splitSession.id}
-                session={splitSession}
-                hidden={false}
-                focused={splitFocused}
+                key={s.id}
+                session={s}
+                hidden={s.id !== mainActiveId}
+                focused={!splitFocused && s.id === mainActiveId}
                 visible={visible}
                 height={panelH}
                 initCwd={cwd}
@@ -975,20 +801,247 @@ export function Terminal({ visible }: TerminalProps) {
                 lineHeight={termSettings.lineHeight}
                 scrollback={termSettings.scrollback}
                 themeName={themeName}
-                showSearch={showSearch && splitFocused}
+                showSearch={showSearch && s.id === focusedSessionId}
                 onHideSearch={() => setShowSearch(false)}
-                onAddonReady={(a) => setSearchAddons((p) => ({ ...p, [splitSession.id]: a }))}
-                onTermReady={(t) => { termRef_map.current[splitSession.id] = t; }}
-                onTitle={(t) => updateSession(splitSession.id, { title: t, exitCode: null })}
-                onCwd={(d) => updateSession(splitSession.id, { cwd: d })}
-                onExitCode={(c) => updateSession(splitSession.id, { exitCode: c })}
+                onAddonReady={(a) => setSearchAddons((p) => ({ ...p, [s.id]: a }))}
+                onTermReady={(t) => { termRef_map.current[s.id] = t; }}
+                onTitle={(t) => updateSession(s.id, { title: t, exitCode: null })}
+                onCwd={(d) => updateSession(s.id, { cwd: d })}
+                onExitCode={(c) => updateSession(s.id, { exitCode: c })}
                 onZoom={zoom}
-                onClose={() => removeSession(splitSession.id)}
-                onSplit={() => { /* nested split not supported */ }}
+                onClose={() => removeSession(s.id)}
+                onSplit={() => splitTerminal()}
               />
+            ))}
+            {mainSessions.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-editor-comment text-xs">No terminal sessions</div>
+            )}
+          </div>
+
+          {/* Split pane */}
+          {splitId && splitSession && (
+            <>
+              <div
+                className="absolute top-0 bottom-0"
+                style={{ left: "50%", width: 1, background: "rgb(var(--c-border))" }}
+              />
+              <div
+                className="flex flex-col overflow-hidden"
+                style={{ position: "absolute", inset: 0, left: "50%" }}
+                onMouseDown={() => { if (!splitFocused) setSplitFocused(true); }}
+              >
+                {/* Split mini-header */}
+                <div
+                  className="flex items-center justify-between shrink-0 px-3 border-b border-editor-border"
+                  style={{
+                    height:     24,
+                    background: splitFocused
+                      ? "rgb(var(--c-bg) / var(--surface-alpha, 1))"
+                      : "rgb(var(--c-deep) / var(--surface-alpha, 1))",
+                    fontSize:   10,
+                    color:      "rgb(var(--c-comment))",
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span style={{
+                      width: 5, height: 5, borderRadius: "50%",
+                      background: splitFocused ? "rgb(var(--c-green))" : "rgb(var(--c-border))",
+                    }} />
+                    {splitSession.title || shellName(splitSession.shell)}
+                    {splitSession.cwd ? ` · ${splitSession.cwd}` : ""}
+                  </span>
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => removeSession(splitSession.id)}
+                    className="text-editor-comment hover:text-editor-red transition-colors"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+                <TerminalPane
+                  key={splitSession.id}
+                  session={splitSession}
+                  hidden={false}
+                  focused={splitFocused}
+                  visible={visible}
+                  height={panelH}
+                  initCwd={cwd}
+                  fontSize={termSettings.fontSize}
+                  lineHeight={termSettings.lineHeight}
+                  scrollback={termSettings.scrollback}
+                  themeName={themeName}
+                  showSearch={showSearch && splitFocused}
+                  onHideSearch={() => setShowSearch(false)}
+                  onAddonReady={(a) => setSearchAddons((p) => ({ ...p, [splitSession.id]: a }))}
+                  onTermReady={(t) => { termRef_map.current[splitSession.id] = t; }}
+                  onTitle={(t) => updateSession(splitSession.id, { title: t, exitCode: null })}
+                  onCwd={(d) => updateSession(splitSession.id, { cwd: d })}
+                  onExitCode={(c) => updateSession(splitSession.id, { exitCode: c })}
+                  onZoom={zoom}
+                  onClose={() => removeSession(splitSession.id)}
+                  onSplit={() => { /* nested split not supported */ }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Right sidebar ─────────────────────────────────────────────── */}
+        <div
+          className="flex flex-col shrink-0 select-none"
+          style={{
+            width:       160,
+            borderLeft:  "1px solid rgb(var(--c-border) / 0.5)",
+            background:  "rgb(var(--c-sidebar) / var(--surface-alpha, 0.7))",
+          }}
+        >
+          {/* Sidebar header: title + action buttons */}
+          <div
+            className="flex items-center justify-between shrink-0 pl-3 pr-1"
+            style={{ height: 32, borderBottom: "1px solid rgb(var(--c-border) / 0.4)" }}
+          >
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", color: "rgb(var(--c-comment))", textTransform: "uppercase" }}>
+              Terminal
+            </span>
+            <div className="flex items-center gap-0.5">
+              {/* New terminal */}
+              <div className="relative">
+                <button
+                  onClick={() => addSession()}
+                  onContextMenu={(e) => { e.preventDefault(); setShellMenu((v) => !v); }}
+                  title="New terminal (⌘T)"
+                  className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"
+                >
+                  <Plus size={11} />
+                </button>
+                {shellMenu && shells.length > 0 && (
+                  <ShellMenu
+                    shells={shells}
+                    onSelect={(sh) => { addSession(sh); setShellMenu(false); }}
+                    onClose={() => setShellMenu(false)}
+                  />
+                )}
+              </div>
+              {/* Search */}
+              <button
+                onClick={() => setShowSearch((v) => !v)}
+                title="Search (⌘F)"
+                className={`flex items-center justify-center w-5 h-5 rounded transition-colors ${showSearch ? "bg-editor-accent/15 text-editor-accent" : "hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"}`}
+              >
+                <Search size={11} />
+              </button>
+              {/* Split */}
+              <button
+                onClick={() => splitTerminal()}
+                title="Split pane (⌘D)"
+                className={`flex items-center justify-center w-5 h-5 rounded transition-colors ${splitId ? "bg-editor-accent/15 text-editor-accent" : "hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"}`}
+              >
+                <SplitSquareHorizontal size={11} />
+              </button>
+              {/* Maximize */}
+              <button
+                onClick={() => setMaximized((v) => !v)}
+                title={maximized ? "Restore" : "Maximize"}
+                className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"
+              >
+                {maximized ? <Minimize2 size={11} /> : <Maximize2 size={11} />}
+              </button>
+              {/* Close panel */}
+              <button
+                onClick={toggle}
+                title="Hide terminal (⌘J)"
+                className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"
+              >
+                <X size={11} />
+              </button>
             </div>
-          </>
-        )}
+          </div>
+
+          {/* Session list */}
+          <div className="flex flex-col overflow-y-auto flex-1" style={{ scrollbarWidth: "none" }}>
+            {sessions.map((s, i) => {
+              const isSplit  = s.id === splitId;
+              const isActive = isSplit ? splitFocused : (s.id === mainActiveId && !splitFocused);
+              return (
+                <div
+                  key={s.id}
+                  onClick={() => {
+                    if (isSplit) { setSplitFocused(true); }
+                    else { setMainActiveId(s.id); setSplitFocused(false); }
+                  }}
+                  onDoubleClick={() => { setRenamingId(s.id); setRenameVal(s.label); }}
+                  className="group/row flex items-center gap-2 cursor-pointer shrink-0 px-3 transition-colors"
+                  style={{
+                    height:     28,
+                    background: isActive ? "rgb(var(--c-accent) / 0.12)" : "transparent",
+                    color:      isActive ? "rgb(var(--c-fg))" : "rgb(var(--c-comment))",
+                    fontSize:   11,
+                    fontFamily: "'JetBrains Mono', monospace",
+                  }}
+                >
+                  {/* Status indicator */}
+                  {s.exitCode !== null ? (
+                    s.exitCode === 0
+                      ? <CheckCircle2 size={9} className="shrink-0 text-editor-green" />
+                      : <XCircle size={9} className="shrink-0 text-editor-red" />
+                  ) : (
+                    <span style={{
+                      width: 5, height: 5, borderRadius: "50%", flexShrink: 0,
+                      background: isActive ? "rgb(var(--c-green))" : "rgb(var(--c-border))",
+                      transition: "background 0.2s",
+                    }} />
+                  )}
+
+                  {/* Label / rename input */}
+                  {renamingId === s.id ? (
+                    <input
+                      ref={renameRef}
+                      value={renameVal}
+                      onChange={(e) => setRenameVal(e.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+                        if (e.key === "Escape") setRenamingId(null);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 min-w-0 bg-transparent outline-none text-editor-fg"
+                      style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace" }}
+                    />
+                  ) : (
+                    <span className="flex-1 min-w-0 truncate">
+                      {s.label || s.title || shellName(s.shell) || `terminal ${i + 1}`}
+                      {isSplit && <span style={{ fontSize: 9, marginLeft: 4, opacity: 0.5 }}>split</span>}
+                    </span>
+                  )}
+
+                  {/* Close button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeSession(s.id); }}
+                    className="opacity-0 group-hover/row:opacity-60 hover:!opacity-100 transition-opacity rounded hover:text-editor-red flex items-center shrink-0"
+                    title="Close"
+                  >
+                    <X size={9} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Sidebar footer: clear button */}
+          <div
+            className="flex items-center justify-end shrink-0 px-2"
+            style={{ height: 28, borderTop: "1px solid rgb(var(--c-border) / 0.3)" }}
+          >
+            <button
+              onClick={clearActive}
+              title="Clear terminal (⌘K)"
+              className="flex items-center justify-center w-5 h-5 rounded transition-colors hover:bg-white/[0.08] text-editor-comment hover:text-editor-fg"
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── Context menu ────────────────────────────────────────────────── */}
@@ -999,7 +1052,6 @@ export function Terminal({ visible }: TerminalProps) {
           onClose={() => setCtxMenu(null)}
         />
       )}
-
     </div>
   );
 }

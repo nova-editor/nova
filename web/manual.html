@@ -302,18 +302,28 @@
     <!-- INSTALLATION -->
     <section class="page active" id="install">
       <div class="page-title">Installation</div>
-      <p class="page-lead">nova is a native macOS application. No Chromium, no Electron — a lightweight native binary built with Tauri and Rust.</p>
-      <h2>Requirements</h2>
-      <ul>
-        <li><strong>macOS 12 Monterey</strong> or later</li>
-        <li>Apple Silicon or Intel — both supported</li>
-      </ul>
-      <h2>Install</h2>
-      <div class="step"><div class="step-n">1</div><div><div class="step-title">Download the DMG</div><div class="step-desc">Download <code>nova.dmg</code> from the releases page.</div></div></div>
+      <p class="page-lead">nova runs on macOS, Windows, and Linux. No Chromium, no Electron — a lightweight native binary built with Tauri and Rust.</p>
+
+      <!-- macOS -->
+      <h2>macOS</h2>
+      <div class="step"><div class="step-n">1</div><div><div class="step-title">Download the DMG</div><div class="step-desc">Download <code>nova_*_universal.dmg</code> from the <a href="https://nova-code-editor.vercel.app" style="color:var(--accent)">releases page</a>. Universal binary — runs on both Apple Silicon and Intel.</div></div></div>
       <div class="step"><div class="step-n">2</div><div><div class="step-title">Drag to Applications</div><div class="step-desc">Open the DMG and drag <strong>nova.app</strong> into <code>/Applications</code>.</div></div></div>
       <div class="step"><div class="step-n">3</div><div><div class="step-title">Bypass Gatekeeper</div><div class="step-desc">macOS will block the app on first launch because it isn't notarized. Run this once in Terminal, then open nova normally:</div></div></div>
       <pre style="background:var(--raised);border:1px solid var(--border);border-radius:6px;padding:.65rem 1rem;font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--fgb);margin:.75rem 0 1rem;overflow-x:auto;">xattr -cr /Applications/nova.app</pre>
-      <div class="callout callout-note"><strong>Note:</strong> Settings are stored in <code>~/Library/Application Support/nova/</code>. Deleting this folder resets everything to defaults.</div>
+      <div class="callout callout-note"><strong>Note:</strong> Settings are stored in <code>~/Library/Application Support/nova/</code>.</div>
+
+      <!-- Windows -->
+      <h2>Windows</h2>
+      <div class="step"><div class="step-n">1</div><div><div class="step-title">Download the installer</div><div class="step-desc">Download <code>nova_*_x64-setup.exe</code> from the <a href="https://nova-code-editor.vercel.app" style="color:var(--accent)">releases page</a>. Requires Windows 10 or later (64-bit).</div></div></div>
+      <div class="step"><div class="step-n">2</div><div><div class="step-title">Run the installer</div><div class="step-desc">Double-click and follow the prompts. Nova installs to <code>%LOCALAPPDATA%\nova</code> by default.</div></div></div>
+      <div class="step"><div class="step-n">3</div><div><div class="step-title">SmartScreen warning</div><div class="step-desc">Windows may show a SmartScreen prompt because the binary isn't signed yet. Click <strong>More info → Run anyway</strong>.</div></div></div>
+      <div class="callout callout-note"><strong>Note:</strong> Settings are stored in <code>%APPDATA%\nova\</code>.</div>
+
+      <!-- Linux -->
+      <h2>Linux</h2>
+      <div class="step"><div class="step-n">1</div><div><div class="step-title">Download the AppImage</div><div class="step-desc">Download <code>nova_*_amd64.AppImage</code> from the <a href="https://nova-code-editor.vercel.app" style="color:var(--accent)">releases page</a>.</div></div></div>
+      <div class="step"><div class="step-n">2</div><div><div class="step-title">Make it executable</div><div class="step-desc">Run <code>chmod +x nova_*.AppImage</code> then launch it directly — no installation needed.</div></div></div>
+      <div class="callout callout-note"><strong>Note:</strong> Settings are stored in <code>~/.config/nova/</code>. A <code>.deb</code> package is also available for Debian/Ubuntu.</div>
     </section>
 
     <!-- FIRST LAUNCH -->
@@ -641,6 +651,15 @@
 </div>
 
 <script>
+  // OS-aware modifier key
+  const ua    = navigator.userAgent.toLowerCase();
+  const isMac = /mac os x/.test(ua) && !/iphone|ipad/.test(ua);
+  if (!isMac) {
+    document.querySelectorAll('kbd').forEach(k => {
+      if (k.textContent.trim() === '⌘') k.textContent = 'Ctrl';
+    });
+  }
+
   const links  = document.querySelectorAll('.sb-link');
   const pages  = document.querySelectorAll('.page');
   const tocEl  = document.getElementById('toc');

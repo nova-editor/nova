@@ -75,25 +75,50 @@ jobs:
               "$URL" -o "$DEST"
           }
 
-          # macOS DMG
+          # ── macOS DMG ────────────────────────────────────────────────────
           DMG_NAME=$(echo "$RELEASE_JSON" | jq -r \
-            '.assets[] | select(.name | test("aarch64.*\\.dmg$")) | .name' | head -1)
-          [ -z "$DMG_NAME" ] || [ "$DMG_NAME" = "null" ] && { echo "No DMG found"; exit 1; }
+            '.assets[] | select(.name | test("\\.dmg$")) | .name' | head -1)
+          if [ -n "$DMG_NAME" ] && [ "$DMG_NAME" != "null" ]; then
+            echo "↓ $DMG_NAME"
+            download_asset "\\.dmg$" "web/downloads/$DMG_NAME"
+            find web/downloads/ -name "*.dmg" ! -name "$DMG_NAME" -delete
+            sed -i "s|downloads/nova_[^\"']*\.dmg|downloads/$DMG_NAME|g" \
+              web/index.html web/manual.html 2>/dev/null || true
+            sed -i "s|href=\"downloads/nova_LATEST_aarch64\.dmg\"|href=\"downloads/$DMG_NAME\"|g" \
+              web/index.html 2>/dev/null || true
+          fi
 
-          echo "↓ $DMG_NAME"
-          download_asset "aarch64.*\\.dmg$" "web/downloads/$DMG_NAME"
-          find web/downloads/ -name "*.dmg" ! -name "$DMG_NAME" -delete
+          # ── Windows NSIS installer ───────────────────────────────────────
+          WIN_NAME=$(echo "$RELEASE_JSON" | jq -r \
+            '.assets[] | select(.name | test("x64-setup\\.exe$")) | .name' | head -1)
+          if [ -n "$WIN_NAME" ] && [ "$WIN_NAME" != "null" ]; then
+            echo "↓ $WIN_NAME"
+            download_asset "x64-setup\\.exe$" "web/downloads/$WIN_NAME"
+            find web/downloads/ -name "*-setup.exe" ! -name "$WIN_NAME" -delete
+            sed -i "s|downloads/nova_[^\"']*x64-setup\.exe|downloads/$WIN_NAME|g" \
+              web/index.html 2>/dev/null || true
+            sed -i "s|href=\"downloads/nova_LATEST_x64-setup\.exe\"|href=\"downloads/$WIN_NAME\"|g" \
+              web/index.html 2>/dev/null || true
+          fi
 
-          # Tauri update manifest
+          # ── Linux AppImage ───────────────────────────────────────────────
+          APPIMAGE_NAME=$(echo "$RELEASE_JSON" | jq -r \
+            '.assets[] | select(.name | test("\\.AppImage$")) | .name' | head -1)
+          if [ -n "$APPIMAGE_NAME" ] && [ "$APPIMAGE_NAME" != "null" ]; then
+            echo "↓ $APPIMAGE_NAME"
+            download_asset "\\.AppImage$" "web/downloads/$APPIMAGE_NAME"
+            find web/downloads/ -name "*.AppImage" ! -name "$APPIMAGE_NAME" -delete
+            sed -i "s|downloads/nova_[^\"']*\.AppImage|downloads/$APPIMAGE_NAME|g" \
+              web/index.html 2>/dev/null || true
+            sed -i "s|href=\"downloads/nova_LATEST_amd64\.AppImage\"|href=\"downloads/$APPIMAGE_NAME\"|g" \
+              web/index.html 2>/dev/null || true
+          fi
+
+          # ── Tauri update manifest ────────────────────────────────────────
           echo "↓ latest.json"
           download_asset "^latest\\.json$" "web/latest.json"
 
-          # Update HTML links
-          sed -i "s|downloads/nova_[^\"']*_aarch64\.dmg|downloads/$DMG_NAME|g" \
-            web/index.html web/manual.html 2>/dev/null || true
-
           echo "${{ steps.meta.outputs.tag }}" > web/downloads/.synced_tag
-          echo "dmg=$DMG_NAME" >> "$GITHUB_ENV"
 
       - name: Commit and push
         if: steps.meta.outputs.changed == 'true'
