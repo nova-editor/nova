@@ -6,17 +6,13 @@ name: Web — Sync Release Assets
 #  2. This workflow runs →  downloads DMG + latest.json into web/
 #  3. Commits to main   →  Vercel auto-deploys web/ as the public website
 #
-#  Users download the DMG directly from Vercel.
-#  The Tauri in-app updater checks:
-#    https://<your-vercel-domain>/latest.json
-#
-#  Required secrets (nova-editor → Settings → Secrets → Actions):
-#    NOVA_TOKEN  — GitHub PAT with `repo` scope (to read private releases)
-#    NOVA_REPO   — mugiwaraluffy56/nova-editor
+#  Uses GITHUB_TOKEN automatically — no extra secrets needed.
 # ──────────────────────────────────────────────────────────────────────────────
 
 on:
   workflow_dispatch:
+  release:
+    types: [published]
   schedule:
     - cron: '0 */6 * * *'
 
@@ -33,13 +29,12 @@ jobs:
       - name: Fetch release metadata
         id: meta
         env:
-          NOVA_TOKEN: ${{ secrets.NOVA_TOKEN }}
-          NOVA_REPO:  ${{ secrets.NOVA_REPO }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RELEASE=$(curl -sf \
-            -H "Authorization: token $NOVA_TOKEN" \
+            -H "Authorization: token $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$NOVA_REPO/releases/latest")
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest")
 
           TAG=$(echo "$RELEASE" | jq -r '.tag_name')
 
@@ -59,7 +54,7 @@ jobs:
       - name: Download assets
         if: steps.meta.outputs.changed == 'true'
         env:
-          NOVA_TOKEN: ${{ secrets.NOVA_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p web/downloads
 
@@ -70,7 +65,7 @@ jobs:
               ".assets[] | select(.name | test(\"$PATTERN\")) | .url" | head -1)
             [ -z "$URL" ] || [ "$URL" = "null" ] && { echo "⚠ No asset: $PATTERN"; return 0; }
             curl -sfL \
-              -H "Authorization: token $NOVA_TOKEN" \
+              -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/octet-stream" \
               "$URL" -o "$DEST"
           }
@@ -84,8 +79,6 @@ jobs:
             find web/downloads/ -name "*.dmg" ! -name "$DMG_NAME" -delete
             sed -i "s|downloads/nova_[^\"']*\.dmg|downloads/$DMG_NAME|g" \
               web/index.html web/manual.html 2>/dev/null || true
-            sed -i "s|href=\"downloads/nova_LATEST_aarch64\.dmg\"|href=\"downloads/$DMG_NAME\"|g" \
-              web/index.html 2>/dev/null || true
           fi
 
           # ── Windows NSIS installer ───────────────────────────────────────
@@ -97,8 +90,6 @@ jobs:
             find web/downloads/ -name "*-setup.exe" ! -name "$WIN_NAME" -delete
             sed -i "s|downloads/nova_[^\"']*x64-setup\.exe|downloads/$WIN_NAME|g" \
               web/index.html 2>/dev/null || true
-            sed -i "s|href=\"downloads/nova_LATEST_x64-setup\.exe\"|href=\"downloads/$WIN_NAME\"|g" \
-              web/index.html 2>/dev/null || true
           fi
 
           # ── Linux AppImage ───────────────────────────────────────────────
@@ -109,8 +100,6 @@ jobs:
             download_asset "\\.AppImage$" "web/downloads/$APPIMAGE_NAME"
             find web/downloads/ -name "*.AppImage" ! -name "$APPIMAGE_NAME" -delete
             sed -i "s|downloads/nova_[^\"']*\.AppImage|downloads/$APPIMAGE_NAME|g" \
-              web/index.html 2>/dev/null || true
-            sed -i "s|href=\"downloads/nova_LATEST_amd64\.AppImage\"|href=\"downloads/$APPIMAGE_NAME\"|g" \
               web/index.html 2>/dev/null || true
           fi
 
