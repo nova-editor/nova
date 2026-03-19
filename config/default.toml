@@ -1,0 +1,45 @@
+[editor]
+tab_width                  = 4
+expand_tabs                = true
+line_numbers               = "relative"
+scroll_off                 = 8
+wrap_lines                 = false
+auto_indent                = true
+trim_trailing_whitespace   = true
+restore_session            = true
+
+[theme]
+name             = "atom-dark"
+bg               = "#282C34"
+fg               = "#ABB2BF"
+cursor           = "#528BFF"
+selection        = "#3E4451"
+line_number      = "#4B5263"
+active_line      = "#2C313A"
+status_bar_bg    = "#21252B"
+status_bar_fg    = "#9DA5B4"
+tab_active_bg    = "#282C34"
+tab_inactive_bg  = "#21252B"
+file_tree_bg     = "#21252B"
+gutter_add       = "#98C379"
+gutter_change    = "#E5C07B"
+gutter_delete    = "#E06C75"
+
+[lsp]
+enabled = true
+
+[lsp.servers]
+rs  = ["rust-analyzer"]
+py  = ["pylsp"]
+ts  = ["typescript-language-server", "--stdio"]
+js  = ["typescript-language-server", "--stdio"]
+go  = ["gopls"]
+lua = ["lua-language-server"]
+
+[git]
+show_gutter_signs = true
+auto_fetch        = false
+
+[keybinds]
+# Override any default binding:
+# normal = { "ctrl+h" = "move_left" }

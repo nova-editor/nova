@@ -1,0 +1,9 @@
+[package]
+name    = "nova-keybinds"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+crossterm  = { workspace = true }
+nova-core   = { path = "../core" }
+nova-config = { path = "../config" }

@@ -1,0 +1,34 @@
+[package]
+name    = "nova-tauri"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "nova_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "nova-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri        = { version = "2", features = [] }
+portable-pty = "0.8"
+tauri-plugin-shell  = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs     = "2"
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+tokio       = { workspace = true }
+anyhow      = { workspace = true }
+tracing     = { workspace = true }
+tracing-subscriber = { workspace = true }
+dirs        = { workspace = true }
+base64      = "0.22"
+nova-core    = { path = "../crates/core" }
+nova-config  = { path = "../crates/config" }
+nova-git     = { path = "../crates/git" }
+nova-lsp     = { path = "../crates/lsp" }

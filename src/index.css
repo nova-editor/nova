@@ -1,0 +1,165 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Default theme variables (Atom Dark) ────────────────────────────────────── */
+/* Values are space-separated RGB triples so Tailwind opacity modifiers work.    */
+:root {
+  --c-bg:        40 44 52;
+  --c-sidebar:   33 37 43;
+  --c-deep:      24 27 33;
+  --c-header:    28 31 38;
+  --c-border:    24 26 31;
+  --c-line:      44 49 58;
+  --c-selection: 62 68 81;
+  --c-gutter:    75 82 99;
+  --c-fg:        171 178 191;
+  --c-comment:   92 99 112;
+  --c-red:       224 108 117;
+  --c-orange:    209 154 102;
+  --c-yellow:    229 192 123;
+  --c-green:     152 195 121;
+  --c-cyan:      86 182 194;
+  --c-blue:      97 175 239;
+  --c-purple:    198 120 221;
+  --c-accent:    82 139 255;
+  /* 1 = fully opaque (no wallpaper), 0 = transparent (wallpaper active) */
+  --surface-alpha: 1;
+}
+
+/* ── Scrollbars ─────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-selection)); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-gutter)); }
+
+/* ── CodeMirror overrides ───────────────────────────────────────────────── */
+.cm-editor {
+  height: 100%;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 13.5px;
+  line-height: 1.6;
+  /* Respect surface-alpha so wallpaper shows through the editor */
+  background-color: rgb(var(--c-bg) / var(--surface-alpha, 1)) !important;
+}
+/* Indent guide lines — override extension's &dark/.cm-dark specificity */
+.cm-editor,
+.cm-editor.cm-dark,
+.cm-editor.cm-light {
+  --indent-marker-bg-color: rgb(var(--c-gutter) / 0.35) !important;
+  --indent-marker-active-bg-color: rgb(var(--c-accent) / 0.6) !important;
+}
+.cm-editor.cm-focused { outline: none !important; }
+.cm-scroller { overflow: auto; background: transparent !important; }
+.cm-content { background: transparent !important; }
+.cm-gutters {
+  background-color: rgb(var(--c-bg) / var(--surface-alpha, 1)) !important;
+  border-right: 1px solid rgb(var(--c-border)) !important;
+  color: rgb(var(--c-gutter)) !important;
+  min-width: 52px;
+}
+.cm-activeLineGutter {
+  background-color: rgb(var(--c-line) / var(--surface-alpha, 1)) !important;
+  color: rgb(var(--c-fg)) !important;
+}
+.cm-activeLine { background-color: rgb(var(--c-line) / var(--surface-alpha, 1)) !important; }
+.cm-selectionBackground,
+.cm-content ::selection { background: rgb(var(--c-selection)) !important; }
+.cm-cursor { border-left-color: rgb(var(--c-accent)) !important; border-left-width: 2px; }
+.cm-foldPlaceholder {
+  background: rgb(var(--c-selection) / var(--surface-alpha, 1));
+  border: none;
+  color: rgb(var(--c-fg));
+  padding: 0 6px;
+  border-radius: 3px;
+}
+
+/* ── File tree ──────────────────────────────────────────────────────────── */
+.tree-item:hover { background-color: rgba(255,255,255,0.05); }
+.tree-item.active { background-color: rgb(var(--c-accent) / 0.12); }
+.tree-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: rgb(var(--c-accent));
+  border-radius: 0 1px 1px 0;
+}
+
+/* ── Tab transitions ────────────────────────────────────────────────────── */
+.tab-close { opacity: 0; }
+.tab:hover .tab-close { opacity: 1; }
+
+/* ── Xterm.js ───────────────────────────────────────────────────────────── */
+.xterm { height: 100%; padding: 6px 12px; box-sizing: border-box; }
+.xterm-viewport { overflow: hidden !important; }
+.xterm-screen  { display: block; }
+.xterm .xterm-viewport { border-radius: 0; }
+.xterm-scroll-area { scrollbar-width: none; }
+
+/* ── Animations ─────────────────────────────────────────────────────────── */
+@keyframes fade-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.fade-in { animation: fade-in 0.12s ease-out; }
+
+/* ── Vim block cursor (normal mode) ─────────────────────────────────────── */
+.cm-editor[data-vim-mode="normal"] .cm-cursor {
+  border-left: none !important;
+  background: rgb(var(--c-accent) / 0.75);
+  width: 0.58em !important;
+  margin-left: 0 !important;
+}
+.cm-editor[data-vim-mode="normal"] .cm-cursorLayer {
+  animation: none !important;
+}
+
+/* ── Markdown preview ───────────────────────────────────────────────────── */
+.md-preview { color: rgb(var(--c-fg)); line-height: 1.7; }
+.md-preview h1,.md-preview h2,.md-preview h3,
+.md-preview h4,.md-preview h5,.md-preview h6 {
+  color: rgb(var(--c-yellow)); font-weight: 700; margin: 1.4em 0 0.5em;
+}
+.md-preview h1 { font-size: 1.75rem; border-bottom: 1px solid rgb(var(--c-selection)); padding-bottom: .4em; }
+.md-preview h2 { font-size: 1.35rem; border-bottom: 1px solid rgb(var(--c-selection)); padding-bottom: .3em; }
+.md-preview h3 { font-size: 1.1rem; }
+.md-preview p  { margin: .8em 0; }
+.md-preview a  { color: rgb(var(--c-blue)); text-decoration: underline; }
+.md-preview a:hover { color: rgb(var(--c-accent)); }
+.md-preview strong { color: rgb(var(--c-yellow)); font-weight: 700; }
+.md-preview em     { color: rgb(var(--c-purple)); font-style: italic; }
+.md-preview code {
+  background: rgb(var(--c-line)); color: rgb(var(--c-red));
+  padding: .15em .4em; border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace; font-size: .88em;
+}
+.md-preview pre {
+  background: rgb(var(--c-sidebar)); border: 1px solid rgb(var(--c-selection)); border-radius: 6px;
+  padding: 1em 1.2em; overflow-x: auto; margin: 1em 0;
+}
+.md-preview pre code { background: none; color: rgb(var(--c-fg)); padding: 0; }
+.md-preview blockquote {
+  border-left: 3px solid rgb(var(--c-accent)); margin: 1em 0;
+  padding: .3em 1em; color: rgb(var(--c-comment)); background: rgb(var(--c-line)); border-radius: 0 4px 4px 0;
+}
+.md-preview ul,.md-preview ol { padding-left: 1.5em; margin: .6em 0; }
+.md-preview li { margin: .25em 0; }
+.md-preview hr { border: none; border-top: 1px solid rgb(var(--c-selection)); margin: 1.5em 0; }
+.md-preview table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+.md-preview th,.md-preview td {
+  border: 1px solid rgb(var(--c-selection)); padding: .45em .8em; text-align: left;
+}
+.md-preview th { background: rgb(var(--c-line)); color: rgb(var(--c-yellow)); font-weight: 600; }
+.md-preview tr:nth-child(even) { background: rgb(var(--c-sidebar)); }
+.md-preview img { max-width: 100%; border-radius: 6px; }
+
+/* ── Keyboard shortcut badge ─────────────────────────────────────────────── */
+.kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgb(var(--c-line));
+  border: 1px solid rgb(var(--c-selection));
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.7rem;
+  color: rgb(var(--c-fg));
+  letter-spacing: 0.02em;
+}
