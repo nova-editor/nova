@@ -378,15 +378,6 @@ pub fn find_codex_path() -> Result<String, String> {
     })
 }
 
-/// Read ~/.claude/stats-cache.json and return its raw JSON string.
-/// Returns an error string if the file doesn't exist or can't be parsed.
-#[tauri::command]
-pub fn read_claude_stats() -> Result<String, String> {
-    let home = dirs::home_dir().ok_or("no home dir")?;
-    let path = home.join(".claude/stats-cache.json");
-    std::fs::read_to_string(&path).map_err(|e| e.to_string())
-}
-
 /// Silently install (or update) the `nova` CLI shim to /usr/local/bin/nova.
 ///
 /// Called automatically on every app launch from setup().

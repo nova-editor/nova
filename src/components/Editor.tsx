@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { MarkdownPreview } from "./MarkdownPreview";
 import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter,
@@ -18,6 +18,7 @@ import { getTheme } from "../theme/themes";
 import { vimLite, VimMode } from "../extensions/vimLite";
 import { indentationMarkers } from "@replit/codemirror-indentation-markers";
 import { useStore, tabContentMap, FileTab } from "../store";
+import { invoke } from "@tauri-apps/api/core";
 
 // ── Compartments — one per reconfigurable axis ────────────────────────────────
 // Module-level tokens: each EditorView that includes them gets its own slot.
@@ -212,6 +213,30 @@ export function Editor({ tab, showMdPreview = true }: EditorProps) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab.path, tab.language]);
+
+  // ── Reload file when external process modifies it (e.g. Claude edits) ───────
+  const tabPathRef2 = useRef(tab.path);
+  useEffect(() => { tabPathRef2.current = tab.path; }, [tab.path]);
+
+  const reloadFromDisk = useCallback(async (changedPath: string) => {
+    if (changedPath !== tabPathRef2.current) return;
+    try {
+      const content = await invoke<string>("read_file", { path: changedPath });
+      tabContentMap.set(changedPath, content);
+      const view = viewRef.current;
+      if (view) {
+        view.dispatch({
+          changes: { from: 0, to: view.state.doc.length, insert: content },
+        });
+      }
+    } catch { /* file may be temporarily unavailable during write */ }
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: Event) => reloadFromDisk((e as CustomEvent<string>).detail);
+    window.addEventListener("nova:file-changed", handler);
+    return () => window.removeEventListener("nova:file-changed", handler);
+  }, [reloadFromDisk]);
 
   // ── Surgical reconfigure effects — zero view rebuild, zero content loss ────
 

@@ -24,7 +24,6 @@ import { AILauncherPage }  from "./components/AILauncherPage";
 import { ClaudeChat }      from "./components/ClaudeChat";
 import { SettingsPanel }   from "./components/Settings";
 import { SpotifyPlayer }   from "./components/SpotifyPlayer";
-import { ClaudeUsageTile } from "./components/ClaudeUsageTile";
 
 function TitleBtn({ onClick, title, active, children }: {
   onClick: () => void; title: string; active?: boolean; children: React.ReactNode;
@@ -74,8 +73,6 @@ export default function App() {
   const toggleSettings    = useStore((s) => s.toggleSettings);
   const showSpotify       = useStore((s) => s.showSpotify);
   const toggleSpotify     = useStore((s) => s.toggleSpotify);
-  const showClaudeUsage   = useStore((s) => s.showClaudeUsage);
-  const toggleClaudeUsage = useStore((s) => s.toggleClaudeUsage);
   const cyclePreset       = useStore((s) => s.cyclePreset);
   const openAiTab         = useStore((s) => s.openAiTab);
   const openAiLauncher    = useStore((s) => s.openAiLauncher);
@@ -183,7 +180,6 @@ export default function App() {
         if (ctrl && e.shiftKey && (e.key === "A" || e.key === "a")) { e.preventDefault(); openClaudeApiTab(); return; }
         if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault(); openAiLauncher(); return; }
         if (ctrl && e.shiftKey && (e.key === "M" || e.key === "m")) { e.preventDefault(); toggleSpotify(); return; }
-        if (ctrl && e.shiftKey && (e.key === "U" || e.key === "u")) { e.preventDefault(); toggleClaudeUsage(); return; }
         if (ctrl && e.key === "\\") { e.preventDefault(); cyclePreset(); return; }
         if (ctrl && e.key === "n" && !e.shiftKey) { e.preventDefault(); window.dispatchEvent(new CustomEvent("nova:new-file")); return; }
         if (ctrl && e.key === "t") { e.preventDefault(); window.dispatchEvent(new CustomEvent("nova:new-terminal")); return; }
@@ -239,7 +235,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
     fuzzyOpen, paletteOpen,
-    toggleFileTree, toggleTerminal, toggleGitPanel, toggleSettings, toggleHelp, toggleSpotify, toggleClaudeUsage, cyclePreset, openAiLauncher, openClaudeApiTab, openFolder,
+    toggleFileTree, toggleTerminal, toggleGitPanel, toggleSettings, toggleHelp, toggleSpotify, cyclePreset, openAiLauncher, openClaudeApiTab, openFolder,
     setFuzzyOpen, setPaletteOpen,
     settings.editor.fontSize, updateSettings,
   ]);
@@ -559,7 +555,6 @@ export default function App() {
       {showHelp     && <HelpPanel onClose={toggleHelp} />}
       {showSettings && <SettingsPanel />}
       {showSpotify  && <SpotifyPlayer onClose={toggleSpotify} />}
-      {showClaudeUsage && <ClaudeUsageTile onClose={toggleClaudeUsage} />}
       </div>
     </div>
   );

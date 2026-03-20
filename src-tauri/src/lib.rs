@@ -285,7 +285,6 @@ pub fn run() {
             claude::find_codex_path,
             claude::claude_api_chat,
             claude::claude_cli_chat,
-            claude::read_claude_stats,
             // Spotify
             spotify::spotify_osascript,
             spotify::spotify_open_url,

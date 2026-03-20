@@ -386,24 +386,30 @@ export function FileTree() {
     if (!workspaceRoot) return;
     let stopFn: (() => void) | null = null;
     let debounce: ReturnType<typeof setTimeout> | null = null;
-    const affectedDirs = new Set<string>();
+    const affectedDirs  = new Set<string>();
+    const affectedFiles = new Set<string>();
 
     const flush = () => {
       refreshRoots();
       for (const dir of affectedDirs) {
         window.dispatchEvent(new CustomEvent("nova:refresh-dir", { detail: dir }));
       }
+      for (const file of affectedFiles) {
+        window.dispatchEvent(new CustomEvent("nova:file-changed", { detail: file }));
+      }
       affectedDirs.clear();
+      affectedFiles.clear();
       setRefreshSignal((n) => n + 1);
     };
 
     watch(
       workspaceRoot,
       (event) => {
-        // Collect the parent dirs of every changed path
+        // Collect changed paths and their parent dirs
         for (const p of event.paths ?? []) {
           const dir = p.includes("/") ? p.substring(0, p.lastIndexOf("/")) : workspaceRoot;
           affectedDirs.add(dir);
+          affectedFiles.add(p);
         }
         // Debounce: flush after 300 ms of quiet
         if (debounce) clearTimeout(debounce);

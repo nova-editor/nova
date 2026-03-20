@@ -34,9 +34,6 @@ export default defineConfig(async () => ({
           if (id.includes("@tauri-apps")) {
             return "tauri";
           }
-          if (id.includes("node_modules/react")) {
-            return "react";
-          }
           if (id.includes("node_modules")) {
             return "vendor";
           }

@@ -450,17 +450,7 @@ export function ClaudeChat({ visible }: ClaudeChatProps) {
           });
         } catch { /* ignore */ }
       }),
-      // Usage tracking
-      listen<string>(`claude-chat-usage-${sid}`, (ev) => {
-        try {
-          const u = JSON.parse(ev.payload) as { inputTokens: number; outputTokens: number; cacheCreationTokens: number; cacheReadTokens: number };
-          useStore.getState().addClaudeUsage({
-            input:  u.inputTokens,
-            output: u.outputTokens,
-            cache:  u.cacheCreationTokens + u.cacheReadTokens,
-          });
-        } catch { /* ignore */ }
-      }),
+      listen<string>(`claude-chat-usage-${sid}`, () => { /* usage tracking removed */ }),
       // Session id for --resume
       listen<string>(`claude-chat-session-${sid}`, (ev) => {
         resumeSession.current = ev.payload;
@@ -618,8 +608,10 @@ export function ClaudeChat({ visible }: ClaudeChatProps) {
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); send(); } }}
-          placeholder={claudePath ? "Ask Claude… (⌘↵ to send)" : "Locating claude…"}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); send(); }
+          }}
+          placeholder={claudePath ? "Ask Claude… (↵ to send, ⇧↵ for newline)" : "Locating claude…"}
           disabled={!claudePath}
           rows={1}
           style={{

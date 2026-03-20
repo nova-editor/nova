@@ -248,12 +248,6 @@ interface AppState {
   cursorCol:  number;
   setCursor:  (line: number, col: number) => void;
 
-  // ── Claude usage ────────────────────────────────────────────────────────────
-  claudeUsageHistory: Record<string, { input: number; output: number; cache: number }>;
-  claudeSessionUsage: { input: number; output: number; cache: number };
-  addClaudeUsage:     (u: { input: number; output: number; cache: number }) => void;
-  showClaudeUsage:    boolean;
-  toggleClaudeUsage:  () => void;
 }
 
 function detectLanguage(path: string): string {
@@ -335,11 +329,9 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     try {
-      // Load content only if not already cached
-      if (!tabContentMap.has(path)) {
-        const content = await invoke<string>("read_file", { path });
-        tabContentMap.set(path, content);
-      }
+      // Always read from disk — external tools (Claude, etc.) may have changed the file
+      const content = await invoke<string>("read_file", { path });
+      tabContentMap.set(path, content);
       const name    = path.split("/").pop() ?? path;
       const newTab: FileTab = { path, name, dirty: false, language: detectLanguage(path) };
 
@@ -732,32 +724,6 @@ export const useStore = create<AppState>((set, get) => ({
   showSpotify:   false,
   toggleSpotify: () => set((s) => ({ showSpotify: !s.showSpotify })),
 
-  // ── Claude usage ────────────────────────────────────────────────────────────
-  claudeUsageHistory: JSON.parse(localStorage.getItem("claude-usage-history") ?? "{}"),
-  claudeSessionUsage: { input: 0, output: 0, cache: 0 },
-  showClaudeUsage:   false,
-  toggleClaudeUsage: () => set((s) => ({ showClaudeUsage: !s.showClaudeUsage })),
-  addClaudeUsage: (u) => set((s) => {
-    const today = new Date().toISOString().slice(0, 10);
-    const prev  = s.claudeUsageHistory[today] ?? { input: 0, output: 0, cache: 0 };
-    const updated = {
-      ...s.claudeUsageHistory,
-      [today]: {
-        input:  prev.input  + u.input,
-        output: prev.output + u.output,
-        cache:  prev.cache  + u.cache,
-      },
-    };
-    localStorage.setItem("claude-usage-history", JSON.stringify(updated));
-    return {
-      claudeUsageHistory: updated,
-      claudeSessionUsage: {
-        input:  s.claudeSessionUsage.input  + u.input,
-        output: s.claudeSessionUsage.output + u.output,
-        cache:  s.claudeSessionUsage.cache  + u.cache,
-      },
-    };
-  }),
 
   // ── Git panel width ────────────────────────────────────────────────────
   gitPanelWidth:    280,
