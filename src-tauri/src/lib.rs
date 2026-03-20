@@ -1,21 +1,61 @@
 mod commands;
 
-use commands::{files, git, pty, spotify, updater};
+use commands::{claude, files, git, pty, spotify, updater};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::Emitter;
+use tauri::{Emitter, EventTarget, Manager};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static WINDOW_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+/// Holds the path passed as a CLI argument (`nova /some/folder`).
+/// Read once by the frontend on startup via `get_startup_path`.
+struct StartupPath(Mutex<Option<String>>);
+
+#[tauri::command]
+fn get_startup_path(state: tauri::State<'_, StartupPath>) -> Option<String> {
+    state.0.lock().unwrap().take()
+}
+
+/// Tracks the label of the most recently focused window.
+/// Updated by on_window_event(Focused(true)) so it stays valid even when the
+/// macOS menu bar temporarily steals focus before the menu event fires.
+struct FocusState(Mutex<String>);
+
+impl FocusState {
+    fn new(initial: &str) -> Self { Self(Mutex::new(initial.to_string())) }
+    fn set(&self, label: String)  { *self.0.lock().unwrap() = label; }
+    fn get(&self) -> String       { self.0.lock().unwrap().clone() }
+}
+
+fn register_focus_listener(win: &tauri::WebviewWindow, app: tauri::AppHandle) {
+    let label = win.label().to_string();
+    win.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Focused(true)) {
+            if let Some(s) = app.try_state::<FocusState>() {
+                s.set(label.clone());
+            }
+        }
+    });
+}
 
 #[tauri::command]
 fn new_window(app: tauri::AppHandle) {
-    let id = format!("nova-{}", std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .subsec_millis());
-    let _ = tauri::WebviewWindowBuilder::new(&app, &id, tauri::WebviewUrl::App("/".into()))
+    let id = format!("nova-{}", WINDOW_COUNTER.fetch_add(1, Ordering::Relaxed));
+    if let Ok(win) = tauri::WebviewWindowBuilder::new(&app, &id, tauri::WebviewUrl::App("/".into()))
         .title("nova")
         .inner_size(1400.0, 900.0)
         .min_inner_size(900.0, 600.0)
         .center()
-        .build();
+        .build()
+    {
+        // Immediately claim focus so menu events target this window,
+        // before the Focused(true) event has a chance to fire.
+        if let Some(focus_state) = app.try_state::<FocusState>() {
+            focus_state.set(id.clone());
+        }
+        register_focus_listener(&win, app);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -27,8 +67,32 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(pty::PtyState::new())
         .manage(updater::PendingUpdate::new())
+        .manage(FocusState::new("main"))
+        .manage({
+            // Pick up `nova /path/to/folder` from the CLI.
+            // Skip the binary name (arg 0) and any flags starting with `-`.
+            let path = std::env::args().skip(1)
+                .find(|a| !a.starts_with('-'))
+                .and_then(|a| {
+                    let p = std::path::Path::new(&a);
+                    if p.exists() { Some(p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+                        .to_string_lossy().into_owned()) }
+                    else { None }
+                });
+            StartupPath(Mutex::new(path))
+        })
         .setup(|app| {
+            // Install `nova` CLI shim to /usr/local/bin/nova on every launch.
+            // Runs in a background thread — silent, no-op if already up to date.
+            claude::install_cli_silently();
+
             let h = app.handle();
+
+            // Track focus on the initial "main" window so menu events know
+            // where to send when the macOS menu bar temporarily steals focus.
+            if let Some(main_win) = app.get_webview_window("main") {
+                register_focus_listener(&main_win, h.clone());
+            }
 
             // ── File ──────────────────────────────────────────────────────────
             let new_file    = MenuItem::with_id(h, "new_file",    "New File",       true, Some("CmdOrCtrl+N"))?;
@@ -126,25 +190,42 @@ pub fn run() {
             ])?;
             app.set_menu(menu)?;
 
-            // Forward menu events to the webview as Tauri events
+            // Forward menu events only to the most recently focused window.
+            // Using emit_to(EventTarget::WebviewWindow) instead of emit() (broadcast)
+            // ensures that "Open Folder" and other actions act on the correct window.
+            // FocusState is updated by on_window_event(Focused(true)) registered on
+            // each window, which persists through the macOS menu-bar focus steal.
             app.on_menu_event(|app_handle, event| {
+                let label = app_handle
+                    .try_state::<FocusState>()
+                    .map(|s| s.get())
+                    .unwrap_or_else(|| "main".to_string());
+
+                let emit = |name: &str| {
+                    app_handle.emit_to(
+                        EventTarget::WebviewWindow { label: label.clone() },
+                        name,
+                        &(),
+                    ).ok();
+                };
+
                 match event.id().as_ref() {
-                    "new_file"        => { app_handle.emit("menu://new-file",        ()).ok(); }
-                    "open_file"       => { app_handle.emit("menu://open-file",       ()).ok(); }
-                    "open_folder"     => { app_handle.emit("menu://open-folder",     ()).ok(); }
-                    "save"            => { app_handle.emit("menu://save",            ()).ok(); }
-                    "close_tab"       => { app_handle.emit("menu://close-tab",       ()).ok(); }
-                    "new_window"      => { app_handle.emit("menu://new-window",      ()).ok(); }
-                    "new_window_w"    => { app_handle.emit("menu://new-window",      ()).ok(); }
-                    "sel_line"        => { app_handle.emit("menu://select-line",     ()).ok(); }
-                    "sel_all"         => { app_handle.emit("menu://select-all",      ()).ok(); }
-                    "toggle_tree"     => { app_handle.emit("menu://toggle-tree",     ()).ok(); }
-                    "toggle_terminal" => { app_handle.emit("menu://toggle-terminal", ()).ok(); }
-                    "toggle_git"      => { app_handle.emit("menu://toggle-git",      ()).ok(); }
-                    "toggle_settings" => { app_handle.emit("menu://toggle-settings", ()).ok(); }
-                    "go_file"         => { app_handle.emit("menu://go-file",         ()).ok(); }
-                    "go_palette"      => { app_handle.emit("menu://go-palette",      ()).ok(); }
-                    "help_shortcuts"  => { app_handle.emit("menu://help-shortcuts",  ()).ok(); }
+                    "new_file"        => emit("menu://new-file"),
+                    "open_file"       => emit("menu://open-file"),
+                    "open_folder"     => emit("menu://open-folder"),
+                    "save"            => emit("menu://save"),
+                    "close_tab"       => emit("menu://close-tab"),
+                    "new_window"      => emit("menu://new-window"),
+                    "new_window_w"    => emit("menu://new-window"),
+                    "sel_line"        => emit("menu://select-line"),
+                    "sel_all"         => emit("menu://select-all"),
+                    "toggle_tree"     => emit("menu://toggle-tree"),
+                    "toggle_terminal" => emit("menu://toggle-terminal"),
+                    "toggle_git"      => emit("menu://toggle-git"),
+                    "toggle_settings" => emit("menu://toggle-settings"),
+                    "go_file"         => emit("menu://go-file"),
+                    "go_palette"      => emit("menu://go-palette"),
+                    "help_shortcuts"  => emit("menu://help-shortcuts"),
                     _ => {}
                 }
             });
@@ -152,11 +233,15 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Startup
+            get_startup_path,
+            new_window,
             // File system
             files::read_file,
             files::read_file_base64,
             files::write_file,
             files::list_dir,
+            files::walk_dir,
             files::file_exists,
             files::create_dir,
             files::delete_file,
@@ -194,8 +279,13 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
-            // Window
-            new_window,
+            // Claude / AI providers
+            claude::find_claude_path,
+            claude::find_gemini_path,
+            claude::find_codex_path,
+            claude::claude_api_chat,
+            claude::claude_cli_chat,
+            claude::read_claude_stats,
             // Spotify
             spotify::spotify_osascript,
             spotify::spotify_open_url,

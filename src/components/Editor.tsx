@@ -17,7 +17,7 @@ import { lintKeymap } from "@codemirror/lint";
 import { getTheme } from "../theme/themes";
 import { vimLite, VimMode } from "../extensions/vimLite";
 import { indentationMarkers } from "@replit/codemirror-indentation-markers";
-import { useStore, tabContentMap } from "../store";
+import { useStore, tabContentMap, FileTab } from "../store";
 
 // ── Compartments — one per reconfigurable axis ────────────────────────────────
 // Module-level tokens: each EditorView that includes them gets its own slot.
@@ -99,15 +99,14 @@ const baseExtensions: Extension = [
 ];
 
 interface EditorProps {
-  tabIndex:       number;
+  tab:            FileTab;
   showMdPreview?: boolean;
 }
 
-export function Editor({ tabIndex, showMdPreview = true }: EditorProps) {
+export function Editor({ tab, showMdPreview = true }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef      = useRef<EditorView | null>(null);
 
-  const tab        = useStore((s) => s.tabs[tabIndex]);
   const markDirty  = useStore((s) => s.markDirty);
   const saveTab    = useStore((s) => s.saveTab);
   const setVimMode = useStore((s) => s.setVimMode);
@@ -117,29 +116,29 @@ export function Editor({ tabIndex, showMdPreview = true }: EditorProps) {
   const markDirtyRef  = useRef(markDirty);
   const saveTabRef    = useRef(saveTab);
   const setVimModeRef = useRef(setVimMode);
-  const tabPathRef    = useRef(tab?.path     ?? "");
-  const tabLangRef    = useRef(tab?.language ?? "");
-  useEffect(() => { markDirtyRef.current  = markDirty;        }, [markDirty]);
-  useEffect(() => { saveTabRef.current    = saveTab;          }, [saveTab]);
-  useEffect(() => { setVimModeRef.current = setVimMode;       }, [setVimMode]);
-  useEffect(() => { tabPathRef.current    = tab?.path     ?? ""; }, [tab?.path]);
-  useEffect(() => { tabLangRef.current    = tab?.language ?? ""; }, [tab?.language]);
+  const tabPathRef    = useRef(tab.path);
+  const tabLangRef    = useRef(tab.language);
+  useEffect(() => { markDirtyRef.current  = markDirty;    }, [markDirty]);
+  useEffect(() => { saveTabRef.current    = saveTab;      }, [saveTab]);
+  useEffect(() => { setVimModeRef.current = setVimMode;   }, [setVimMode]);
+  useEffect(() => { tabPathRef.current    = tab.path;     }, [tab.path]);
+  useEffect(() => { tabLangRef.current    = tab.language; }, [tab.language]);
 
   // Preview content in local state — only this component re-renders on change
   const [previewContent, setPreviewContent] = useState<string>("");
 
   // Reset preview when switching files
   useEffect(() => {
-    if (tab?.language === "markdown") {
+    if (tab.language === "markdown") {
       setPreviewContent(tabContentMap.get(tab.path) ?? "");
     }
-  }, [tab?.path, tab?.language]);
+  }, [tab.path, tab.language]);
 
   // ── Create/destroy the view — ONLY when switching files ──────────────────
   // Settings changes are handled by compartment reconfigure effects below.
   // This means: font size change = 1ms dispatch, not a full rebuild.
   useEffect(() => {
-    if (!containerRef.current || !tab) return;
+    if (!containerRef.current) return;
     let langCancelled = false;
 
     const view = new EditorView({
@@ -162,8 +161,7 @@ export function Editor({ tabIndex, showMdPreview = true }: EditorProps) {
             keydown(e) {
               if ((e.ctrlKey || e.metaKey) && e.key === "s") {
                 e.preventDefault();
-                const idx = useStore.getState().tabs.findIndex((t) => t.path === tabPathRef.current);
-                if (idx >= 0) saveTabRef.current(idx);
+                saveTabRef.current(tabPathRef.current);
               }
               if ((e.ctrlKey || e.metaKey) && (e.key === "-" || e.key === "_")) {
                 e.preventDefault();
@@ -213,7 +211,7 @@ export function Editor({ tabIndex, showMdPreview = true }: EditorProps) {
       viewRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab?.path, tab?.language]);
+  }, [tab.path, tab.language]);
 
   // ── Surgical reconfigure effects — zero view rebuild, zero content loss ────
 
@@ -270,9 +268,7 @@ export function Editor({ tabIndex, showMdPreview = true }: EditorProps) {
       view.dispatch({ changes: { from: 0, to: current.length, insert: stored } });
       if (tab.language === "markdown") setPreviewContent(stored);
     }
-  }, [tab?.path, tab?.dirty]);
-
-  if (!tab) return null;
+  }, [tab.path, tab.dirty]);
 
   const splitView = tab.language === "markdown" && showMdPreview;
 

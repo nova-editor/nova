@@ -29,7 +29,10 @@ anyhow      = { workspace = true }
 tracing     = { workspace = true }
 tracing-subscriber = { workspace = true }
 dirs        = { workspace = true }
-base64      = "0.22"
+base64       = "0.22"
+ignore       = "0.4"
+reqwest      = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
 nova-core    = { path = "../crates/core" }
 nova-config  = { path = "../crates/config" }
 nova-git     = { path = "../crates/git" }

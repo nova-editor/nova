@@ -2,15 +2,17 @@ import { GitBranch, Circle } from "lucide-react";
 import { useStore } from "../store";
 
 export function StatusBar() {
-  const tabs       = useStore((s) => s.tabs);
-  const activeIdx  = useStore((s) => s.activeTabIdx);
+  const leftPane   = useStore((s) => s.leftPane);
+  const rightPane  = useStore((s) => s.rightPane);
+  const focused    = useStore((s) => s.focusedPane);
   const branch     = useStore((s) => s.gitBranch);
   const vimMode    = useStore((s) => s.vimMode);
   const vimEnabled = useStore((s) => s.settings.editor.vimEnabled);
   const cursorLine = useStore((s) => s.cursorLine);
   const cursorCol  = useStore((s) => s.cursorCol);
 
-  const tab = tabs[activeIdx];
+  const pane = focused === "right" && rightPane !== null ? rightPane : leftPane;
+  const tab  = pane.tabs[pane.activeIdx];
 
   return (
     <div className="flex items-center justify-between px-3 text-2xs font-mono border-t border-editor-border text-editor-comment shrink-0"

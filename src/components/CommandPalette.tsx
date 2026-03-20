@@ -21,7 +21,6 @@ export function CommandPalette() {
   const toggleTerminal = useStore((s) => s.toggleTerminal);
   const toggleGitPanel = useStore((s) => s.toggleGitPanel);
   const saveTab        = useStore((s) => s.saveTab);
-  const activeTabIdx   = useStore((s) => s.activeTabIdx);
   const showFileTree   = useStore((s) => s.showFileTree);
 
   const commands: Command[] = [
@@ -35,7 +34,14 @@ export function CommandPalette() {
       id: "save", label: "Save File",
       description: "Save the current editor file",
       icon: <Save size={14} />,
-      action: () => { saveTab(activeTabIdx); setOpen(false); },
+      action: () => {
+        const s   = useStore.getState();
+        const key = s.focusedPane === "right" && s.rightPane ? "right" : "left";
+        const p   = key === "right" ? s.rightPane! : s.leftPane;
+        const tab = p.tabs[p.activeIdx];
+        if (tab) saveTab(tab.path);
+        setOpen(false);
+      },
     },
     {
       id: "toggle_tree", label: "Toggle File Explorer",

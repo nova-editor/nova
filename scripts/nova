@@ -1,0 +1,31 @@
+#!/bin/bash
+# nova — open the Nova editor from the command line
+#
+# Usage:
+#   nova                   # open Nova (no folder)
+#   nova .                 # open current directory
+#   nova /path/to/folder   # open a specific folder
+#   nova /path/to/file     # open a specific file
+#
+# Install:
+#   sudo cp scripts/nova /usr/local/bin/nova
+#   sudo chmod +x /usr/local/bin/nova
+
+APP="/Applications/nova.app"
+
+if [ ! -d "$APP" ]; then
+  echo "nova: cannot find $APP" >&2
+  exit 1
+fi
+
+if [ "$#" -eq 0 ]; then
+  open -na "$APP"
+else
+  # Resolve the argument to an absolute path
+  ABS=$(cd "$(dirname "$1")" 2>/dev/null && pwd)/$(basename "$1")
+  if [ ! -e "$ABS" ]; then
+    echo "nova: no such file or directory: $1" >&2
+    exit 1
+  fi
+  open -na "$APP" --args "$ABS"
+fi

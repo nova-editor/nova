@@ -1,21 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Search } from "lucide-react";
-import { useStore, FileEntry } from "../store";
+import { useStore } from "../store";
 
-function collectFiles(entries: FileEntry[], prefix = ""): string[] {
-  return entries.flatMap((e) =>
-    e.is_dir ? [] : [prefix ? `${prefix}/${e.name}` : e.name]
-  );
-}
-
-function fuzzyMatch(text: string, query: string): boolean {
-  let qi = 0;
-  for (const ch of text.toLowerCase()) {
-    if (ch === query[qi]) qi++;
-    if (qi === query.length) return true;
+// Fuzzy match with score: returns null if no match, or a score (higher = better).
+// Consecutive matching chars and matches at path separators/word boundaries score higher.
+function fuzzyScore(text: string, query: string): number | null {
+  const t = text.toLowerCase();
+  const q = query.toLowerCase();
+  let ti = 0, qi = 0, score = 0, consecutive = 0;
+  while (ti < t.length && qi < q.length) {
+    if (t[ti] === q[qi]) {
+      consecutive++;
+      // Bonus for consecutive chars, path separators, dots, and uppercase boundaries
+      const boundary = ti === 0 || t[ti - 1] === "/" || t[ti - 1] === "." || t[ti - 1] === "_" || t[ti - 1] === "-";
+      score += consecutive * 2 + (boundary ? 5 : 0);
+      qi++;
+    } else {
+      consecutive = 0;
+    }
+    ti++;
   }
-  return false;
+  return qi === q.length ? score - ti : null; // penalise longer paths slightly
 }
 
 export function FuzzyFinder() {
@@ -30,34 +36,29 @@ export function FuzzyFinder() {
   const openFile      = useStore((s) => s.openFile);
   const setOpen       = useStore((s) => s.setFuzzyOpen);
 
-  // Load all files on mount
+  // Single fast walk_dir call — uses the ignore crate (ripgrep's engine) in parallel
   useEffect(() => {
-    async function load(dir: string, depth = 0): Promise<string[]> {
-      if (depth > 20) return [];
-      try {
-        const entries = await invoke<FileEntry[]>("list_dir", { path: dir });
-        const results: string[] = [];
-        for (const e of entries) {
-          if (e.is_dir) {
-            const sub = await load(e.path, depth + 1);
-            results.push(...sub.map((s) => `${e.name}/${s}`));
-          } else {
-            results.push(e.name);
-          }
-        }
-        return results;
-      } catch { return []; }
+    if (workspaceRoot) {
+      invoke<string[]>("walk_dir", { root: workspaceRoot })
+        .then(setFiles)
+        .catch(() => {});
     }
-    if (workspaceRoot) load(workspaceRoot).then(setFiles);
     inputRef.current?.focus();
   }, [workspaceRoot]);
 
   useEffect(() => {
-    const q = query.toLowerCase();
-    const filtered = q
-      ? files.filter((f) => fuzzyMatch(f, q))
-      : files;
-    setMatches(filtered.slice(0, 100));
+    const q = query.trim();
+    if (!q) {
+      setMatches(files.slice(0, 100));
+    } else {
+      const scored: Array<{ file: string; score: number }> = [];
+      for (const file of files) {
+        const score = fuzzyScore(file, q);
+        if (score !== null) scored.push({ file, score });
+      }
+      scored.sort((a, b) => b.score - a.score);
+      setMatches(scored.slice(0, 100).map((s) => s.file));
+    }
     setCursor(0);
   }, [query, files]);
 

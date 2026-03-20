@@ -189,9 +189,20 @@ export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
     [showTerminal, showGitPanel, showFileTree, showSettings, showHelp, sidebarWidth, terminalHeight, gitPanelWidth],
   );
 
-  const [pos, setPos] = useState({ x: window.innerWidth - 340, y: window.innerHeight - 320 });
-  const offsetRef = useRef({ x: 0, y: 0 });
-  const targetRef = useRef({ x: window.innerWidth - 340, y: window.innerHeight - 320 });
+  // Initialize directly from current store state so no startup bounce in production.
+  const [pos, setPos] = useState(() => {
+    const st = useStore.getState();
+    return safeHome(st.showTerminal, st.showGitPanel, st.showFileTree, st.showSettings, st.showHelp,
+      st.settings.sidebarWidth, st.terminalHeight, st.gitPanelWidth);
+  });
+  const offsetRef    = useRef({ x: 0, y: 0 });
+  // targetRef seeded with the same safeHome on first access
+  const targetRef    = useRef<{ x: number; y: number }>(null!);
+  if (!targetRef.current) {
+    const st = useStore.getState();
+    targetRef.current = safeHome(st.showTerminal, st.showGitPanel, st.showFileTree, st.showSettings, st.showHelp,
+      st.settings.sidebarWidth, st.terminalHeight, st.gitPanelWidth);
+  }
   const velRef       = useRef({ x: 0, y: 0 });
   const rafRef       = useRef(0);
   const animatingRef = useRef(false);
@@ -270,11 +281,9 @@ export function SpotifyPlayer({ onClose }: { onClose: () => void }) {
     rafRef.current = requestAnimationFrame(loop);
   }, []);
 
-  // Animate tile to safe position when panels open/close — skip on first mount
-  // so the tile opens at its default position, not the current safe home.
-  const panelsMounted = useRef(false);
+  // Animate tile whenever panels open/close — initial pos already matches safeHome
+  // so no startup bounce even in production (no-strict-mode) builds.
   useEffect(() => {
-    if (!panelsMounted.current) { panelsMounted.current = true; return; }
     targetRef.current = getSafeHome();
     startLoop();
   }, [getSafeHome, startLoop]);

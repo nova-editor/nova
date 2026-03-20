@@ -33,8 +33,9 @@ export interface Settings {
   };
   fullDark:           boolean; // all backgrounds → near-black; fg/accent stay per-theme
   spotifyTransparent: boolean; // glass spotify player (shows wallpaper through)
-  autosaveDelay: number;
-  sidebarWidth:  number;
+  autosaveDelay:  number;
+  sidebarWidth:   number;
+  claudeApiKey:   string;
 }
 
 export const DEFAULT_BACKGROUND = {
@@ -68,6 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spotifyTransparent: false,
   autosaveDelay: 500,
   sidebarWidth:  240,
+  claudeApiKey:  "",
 };
 
 function loadSettings(): Settings {
@@ -88,13 +90,28 @@ function loadSettings(): Settings {
   return DEFAULT_SETTINGS;
 }
 
-// ── FileTab no longer stores content — content lives in tabContentMap ─────────
-// This eliminates O(content_size) Zustand state updates on every keystroke.
+// ── AI provider type ──────────────────────────────────────────────────────────
+export type AiProvider = "claude" | "gemini" | "codex";
+
+// ── FileTab — content lives in tabContentMap for O(1) keystroke perf ─────────
 export interface FileTab {
-  path:     string;
-  name:     string;
-  dirty:    boolean;
-  language: string;
+  path:        string;
+  name:        string;
+  dirty:       boolean;
+  language:    string;
+  kind?:       "file" | "ai" | "ai-launcher" | "claude-api";
+  aiProvider?: AiProvider;
+}
+
+/** @deprecated Use AI_TAB_PREFIX + openAiTab instead */
+export const CLAUDE_TAB_PATH   = "__claude__";
+export const AI_TAB_PREFIX     = "__ai__";
+export const AI_LAUNCHER_PATH  = "__ai-launcher__";
+
+// ── PaneState — each pane has its own independent tab list ───────────────────
+export interface PaneState {
+  tabs:      FileTab[];
+  activeIdx: number;
 }
 
 export interface FileEntry {
@@ -128,14 +145,23 @@ interface AppState {
   setWorkspaceRoot: (root: string) => void;
   initCwd:          (root: string) => void;
 
-  // ── Tabs / Buffers ──────────────────────────────────────────────────────
-  tabs:         FileTab[];
-  activeTabIdx: number;
-  openFile:     (path: string) => Promise<void>;
-  closeTab:     (idx: number) => void;
-  setActiveTab: (idx: number) => void;
-  saveTab:      (idx: number, opts?: { silent?: boolean }) => Promise<void>;
-  markDirty:    (path: string) => void;
+  // ── Two-pane model ───────────────────────────────────────────────────────
+  leftPane:     PaneState;
+  rightPane:    PaneState | null;
+  focusedPane:  "left" | "right";
+
+  openFile:          (path: string) => Promise<void>;
+  openAiTab:         (provider: AiProvider) => void;
+  openAiLauncher:    () => void;
+  openClaudeApiTab:  () => void;
+  replaceTabWithAi:  (tabPath: string, provider: AiProvider) => void;
+  closeTab:    (idx: number, pane: "left" | "right") => void;
+  setActiveTab:   (idx: number, pane: "left" | "right") => void;
+  setFocusedPane: (pane: "left" | "right") => void;
+  splitEditor:    () => void;
+  closeSplit:     () => void;
+  saveTab:        (path: string, opts?: { silent?: boolean }) => Promise<void>;
+  markDirty:      (path: string) => void;
 
   // ── Panels ──────────────────────────────────────────────────────────────
   showFileTree:   boolean;
@@ -185,13 +211,14 @@ interface AppState {
   // ── Settings ─────────────────────────────────────────────────────────────
   settings:       Settings;
   updateSettings: (patch: {
-    editor?:            Partial<Settings["editor"]>;
-    terminal?:          Partial<Settings["terminal"]>;
-    background?:        Partial<Settings["background"]>;
-    fullDark?:          boolean;
+    editor?:             Partial<Settings["editor"]>;
+    terminal?:           Partial<Settings["terminal"]>;
+    background?:         Partial<Settings["background"]>;
+    fullDark?:           boolean;
     spotifyTransparent?: boolean;
-    autosaveDelay?:     number;
-    sidebarWidth?:      number;
+    autosaveDelay?:      number;
+    sidebarWidth?:       number;
+    claudeApiKey?:       string;
   }) => void;
   showSettings:   boolean;
   toggleSettings: () => void;
@@ -208,7 +235,7 @@ interface AppState {
   showSpotify:   boolean;
   toggleSpotify: () => void;
 
-  // ── Git panel width (changes when graph tab is active) ────────────────────
+  // ── Git panel width ────────────────────────────────────────────────────────
   gitPanelWidth:    number;
   setGitPanelWidth: (w: number) => void;
 
@@ -220,6 +247,13 @@ interface AppState {
   cursorLine: number;
   cursorCol:  number;
   setCursor:  (line: number, col: number) => void;
+
+  // ── Claude usage ────────────────────────────────────────────────────────────
+  claudeUsageHistory: Record<string, { input: number; output: number; cache: number }>;
+  claudeSessionUsage: { input: number; output: number; cache: number };
+  addClaudeUsage:     (u: { input: number; output: number; cache: number }) => void;
+  showClaudeUsage:    boolean;
+  toggleClaudeUsage:  () => void;
 }
 
 function detectLanguage(path: string): string {
@@ -240,71 +274,282 @@ function detectLanguage(path: string): string {
 
 // ── Content store outside React — zero re-renders on keystrokes ───────────────
 // Keyed by absolute file path. Set by Editor on every doc change.
-// Read by saveTab. Cleared on closeTab.
+// Read by saveTab. Cleared on closeTab when no pane holds the path.
 export const tabContentMap = new Map<string, string>();
 
-// ── Autosave timers keyed by FILE PATH (not index — index shifts on close) ────
+// ── Autosave timers keyed by file path ───────────────────────────────────────
 const _autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function getFocusedPane(s: Pick<AppState, "focusedPane" | "leftPane" | "rightPane">): {
+  pane: PaneState;
+  key: "left" | "right";
+} {
+  if (s.focusedPane === "right" && s.rightPane !== null) {
+    return { pane: s.rightPane, key: "right" };
+  }
+  return { pane: s.leftPane, key: "left" };
+}
 
 export const useStore = create<AppState>((set, get) => ({
   // ── Workspace ─────────────────────────────────────────────────────────
   workspaceRoot: "",
   setWorkspaceRoot: (root) => {
-    set({ workspaceRoot: root, tabs: [], activeTabIdx: 0, expandedDirs: new Set(), showFileTree: true });
+    set({
+      workspaceRoot: root,
+      leftPane:      { tabs: [], activeIdx: 0 },
+      rightPane:     null,
+      focusedPane:   "left",
+      expandedDirs:  new Set(),
+      showFileTree:  true,
+    });
     get().refreshGit();
   },
-  // Set cwd for terminal default only — does not open file tree
   initCwd: (root) => {
     set({ workspaceRoot: root });
   },
 
-  // ── Tabs ──────────────────────────────────────────────────────────────
-  tabs:         [],
-  activeTabIdx: 0,
+  // ── Two-pane model ────────────────────────────────────────────────────
+  leftPane:    { tabs: [], activeIdx: 0 },
+  rightPane:   null,
+  focusedPane: "left",
+
+  setFocusedPane: (pane) => set({ focusedPane: pane }),
+
+  setActiveTab: (idx, pane) => set((s) => {
+    if (pane === "left") return { leftPane: { ...s.leftPane, activeIdx: idx }, focusedPane: "left" };
+    if (!s.rightPane) return {};
+    return { rightPane: { ...s.rightPane, activeIdx: idx }, focusedPane: "right" };
+  }),
 
   openFile: async (path) => {
-    const { tabs } = get();
-    const existing = tabs.findIndex((t) => t.path === path);
-    if (existing >= 0) { set({ activeTabIdx: existing }); return; }
+    const { leftPane, rightPane, focusedPane } = get();
+    const { pane, key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+
+    // Already in this pane — surface it
+    const existing = pane.tabs.findIndex((t) => t.path === path);
+    if (existing >= 0) {
+      if (key === "left") set({ leftPane: { ...leftPane, activeIdx: existing }, focusedPane: "left" });
+      else set({ rightPane: { ...rightPane!, activeIdx: existing }, focusedPane: "right" });
+      return;
+    }
+
     try {
-      const content = await invoke<string>("read_file", { path });
-      tabContentMap.set(path, content);
-      const name = path.split("/").pop() ?? path;
-      set((s) => ({
-        tabs:         [...s.tabs, { path, name, dirty: false, language: detectLanguage(path) }],
-        activeTabIdx: s.tabs.length,
-      }));
+      // Load content only if not already cached
+      if (!tabContentMap.has(path)) {
+        const content = await invoke<string>("read_file", { path });
+        tabContentMap.set(path, content);
+      }
+      const name    = path.split("/").pop() ?? path;
+      const newTab: FileTab = { path, name, dirty: false, language: detectLanguage(path) };
+
+      set((s) => {
+        if (key === "left") {
+          return {
+            leftPane: { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length },
+            focusedPane: "left" as const,
+          };
+        }
+        if (!s.rightPane) {
+          return {
+            rightPane: { tabs: [newTab], activeIdx: 0 },
+            focusedPane: "right" as const,
+          };
+        }
+        return {
+          rightPane: { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length },
+          focusedPane: "right" as const,
+        };
+      });
     } catch (e) {
       get().setStatus(`Cannot open: ${e}`);
     }
   },
 
-  closeTab: (idx) => {
-    const tab = get().tabs[idx];
-    if (tab) {
-      // Cancel pending autosave for this file
-      const timer = _autosaveTimers.get(tab.path);
-      if (timer) { clearTimeout(timer); _autosaveTimers.delete(tab.path); }
-      // Free content memory
-      tabContentMap.delete(tab.path);
-    }
+  openAiTab: (provider) => {
+    const { leftPane, rightPane, focusedPane } = get();
+    const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+
+    // Create a new unique session — multiple AI tabs per pane are allowed
+    const sessionId = crypto.randomUUID();
+    const path = `${AI_TAB_PREFIX}${provider}__${sessionId}`;
+    const providerName = ({ claude: "Claude Code", gemini: "Gemini", codex: "Codex" } as const)[provider];
+    const newTab: FileTab = { path, name: providerName, dirty: false, language: "plaintext", kind: "ai", aiProvider: provider };
+
     set((s) => {
-      const tabs         = s.tabs.filter((_, i) => i !== idx);
-      const activeTabIdx = Math.min(s.activeTabIdx, Math.max(0, tabs.length - 1));
-      return { tabs, activeTabIdx };
+      if (key === "left") {
+        return { leftPane: { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length }, focusedPane: "left" as const };
+      }
+      if (!s.rightPane) {
+        return { rightPane: { tabs: [newTab], activeIdx: 0 }, focusedPane: "right" as const };
+      }
+      return { rightPane: { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length }, focusedPane: "right" as const };
     });
   },
 
-  setActiveTab: (idx) => set({ activeTabIdx: idx }),
+  openAiLauncher: () => {
+    const { leftPane, rightPane, focusedPane } = get();
+    const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+    const launcherId = crypto.randomUUID();
+    const newTab: FileTab = {
+      path:     `${AI_LAUNCHER_PATH}${launcherId}`,
+      name:     "AI Agents",
+      dirty:    false,
+      language: "plaintext",
+      kind:     "ai-launcher",
+    };
+    set((s) => {
+      if (key === "left") {
+        return { leftPane: { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length }, focusedPane: "left" as const };
+      }
+      if (!s.rightPane) {
+        return { rightPane: { tabs: [newTab], activeIdx: 0 }, focusedPane: "right" as const };
+      }
+      return { rightPane: { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length }, focusedPane: "right" as const };
+    });
+  },
 
-  saveTab: async (idx, { silent = false } = {}) => {
-    const tab = get().tabs[idx];
-    if (!tab || !tab.dirty) return;
+  openClaudeApiTab: () => {
+    const { leftPane, rightPane, focusedPane } = get();
+    const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+    const newTab: FileTab = {
+      path:     `__claude-api__${crypto.randomUUID()}`,
+      name:     "Claude",
+      dirty:    false,
+      language: "plaintext",
+      kind:     "claude-api",
+    };
+    set((s) => {
+      if (key === "left") {
+        return { leftPane: { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length }, focusedPane: "left" as const };
+      }
+      if (!s.rightPane) {
+        return { rightPane: { tabs: [newTab], activeIdx: 0 }, focusedPane: "right" as const };
+      }
+      return { rightPane: { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length }, focusedPane: "right" as const };
+    });
+  },
+
+  replaceTabWithAi: (tabPath, provider) => {
+    const sessionId = crypto.randomUUID();
+    const newTab: FileTab = {
+      path:        `${AI_TAB_PREFIX}${provider}__${sessionId}`,
+      name:        provider === "claude" ? "Claude Code" : provider === "gemini" ? "Gemini" : "Codex",
+      dirty:       false,
+      language:    "plaintext",
+      kind:        "ai",
+      aiProvider:  provider,
+    };
+    set((s) => {
+      // Find which pane holds this launcher tab
+      const leftIdx = s.leftPane.tabs.findIndex((t) => t.path === tabPath);
+      if (leftIdx >= 0) {
+        const tabs = s.leftPane.tabs.map((t, i) => i === leftIdx ? newTab : t);
+        return { leftPane: { tabs, activeIdx: leftIdx }, focusedPane: "left" as const };
+      }
+      if (s.rightPane) {
+        const rightIdx = s.rightPane.tabs.findIndex((t) => t.path === tabPath);
+        if (rightIdx >= 0) {
+          const tabs = s.rightPane.tabs.map((t, i) => i === rightIdx ? newTab : t);
+          return { rightPane: { tabs, activeIdx: rightIdx }, focusedPane: "right" as const };
+        }
+      }
+      return {};
+    });
+  },
+
+  // Duplicate focused pane's active tab into the other pane.
+  // Creates right pane if it doesn't exist. Focuses the destination pane.
+  splitEditor: () => {
+    const { focusedPane, leftPane, rightPane } = get();
+    const { pane: srcPane, key: srcKey } = getFocusedPane({ focusedPane, leftPane, rightPane });
+    const activeTab = srcPane.tabs[srcPane.activeIdx];
+    if (!activeTab) return;
+
+    const destKey: "left" | "right" = srcKey === "left" ? "right" : "left";
+
+    set((s) => {
+      if (destKey === "right") {
+        if (!s.rightPane) {
+          return { rightPane: { tabs: [activeTab], activeIdx: 0 }, focusedPane: "right" as const };
+        }
+        const existIdx = s.rightPane.tabs.findIndex((t) => t.path === activeTab.path);
+        if (existIdx >= 0) {
+          return { rightPane: { ...s.rightPane, activeIdx: existIdx }, focusedPane: "right" as const };
+        }
+        return {
+          rightPane: { tabs: [...s.rightPane.tabs, activeTab], activeIdx: s.rightPane.tabs.length },
+          focusedPane: "right" as const,
+        };
+      } else {
+        // dest is left
+        const existIdx = s.leftPane.tabs.findIndex((t) => t.path === activeTab.path);
+        if (existIdx >= 0) {
+          return { leftPane: { ...s.leftPane, activeIdx: existIdx }, focusedPane: "left" as const };
+        }
+        return {
+          leftPane: { tabs: [...s.leftPane.tabs, activeTab], activeIdx: s.leftPane.tabs.length },
+          focusedPane: "left" as const,
+        };
+      }
+    });
+  },
+
+  closeSplit: () => {
+    set({ rightPane: null, focusedPane: "left" });
+  },
+
+  closeTab: (idx, pane) => {
+    const { leftPane, rightPane } = get();
+    const sourcePane = pane === "left" ? leftPane : rightPane;
+    if (!sourcePane) return;
+
+    const tab = sourcePane.tabs[idx];
+    if (tab) {
+      // Only free content/timers if path won't remain open in any pane
+      const remainLeft  = pane === "left" ? leftPane.tabs.filter((_, i) => i !== idx)  : leftPane.tabs;
+      const remainRight = pane === "right" ? (rightPane?.tabs ?? []).filter((_, i) => i !== idx) : (rightPane?.tabs ?? []);
+      const stillOpen   = remainLeft.some((t) => t.path === tab.path) || remainRight.some((t) => t.path === tab.path);
+      if (!stillOpen) {
+        const timer = _autosaveTimers.get(tab.path);
+        if (timer) { clearTimeout(timer); _autosaveTimers.delete(tab.path); }
+        tabContentMap.delete(tab.path);
+      }
+    }
+
+    set((s) => {
+      if (pane === "left") {
+        const tabs      = s.leftPane.tabs.filter((_, i) => i !== idx);
+        const activeIdx = Math.min(s.leftPane.activeIdx, Math.max(0, tabs.length - 1));
+        return { leftPane: { tabs, activeIdx } };
+      } else {
+        if (!s.rightPane) return {};
+        const tabs = s.rightPane.tabs.filter((_, i) => i !== idx);
+        if (tabs.length === 0) return { rightPane: null, focusedPane: "left" as const };
+        const activeIdx = Math.min(s.rightPane.activeIdx, Math.max(0, tabs.length - 1));
+        return { rightPane: { tabs, activeIdx } };
+      }
+    });
+  },
+
+  saveTab: async (path, { silent = false } = {}) => {
+    const { leftPane, rightPane } = get();
+    const tab = leftPane.tabs.find((t) => t.path === path)
+      ?? rightPane?.tabs.find((t) => t.path === path);
+    if (!tab || !tab.dirty || tab.kind === "ai" || tab.kind === "ai-launcher") return;
     const content = tabContentMap.get(tab.path) ?? "";
     try {
       await invoke("write_file", { path: tab.path, content });
+      // Clear dirty in ALL panes that have this path
       set((s) => ({
-        tabs: s.tabs.map((t, i) => i === idx ? { ...t, dirty: false } : t),
+        leftPane: {
+          ...s.leftPane,
+          tabs: s.leftPane.tabs.map((t) => t.path === path ? { ...t, dirty: false } : t),
+        },
+        rightPane: s.rightPane ? {
+          ...s.rightPane,
+          tabs: s.rightPane.tabs.map((t) => t.path === path ? { ...t, dirty: false } : t),
+        } : null,
       }));
       if (!silent) {
         get().setStatus(`Saved ${tab.name}`);
@@ -315,30 +560,35 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  // Called by Editor on every doc change. Only updates Zustand when transitioning
-  // clean → dirty (first keystroke after save). Subsequent keystrokes are O(1)
-  // with no Zustand set() call — content is already in tabContentMap.
+  // Called by Editor on every doc change. Marks dirty in ALL panes holding the path.
   markDirty: (path) => {
-    const { tabs, autosave, settings } = get();
-    const idx = tabs.findIndex((t) => t.path === path);
-    if (idx === -1) return;
+    const { leftPane, rightPane, autosave, settings } = get();
+    const inLeft  = leftPane.tabs.some((t) => t.path === path);
+    const inRight = rightPane?.tabs.some((t) => t.path === path) ?? false;
+    if (!inLeft && !inRight) return;
 
-    // Only write to Zustand on the clean→dirty transition
-    if (!tabs[idx].dirty) {
+    const alreadyDirty = leftPane.tabs.find((t) => t.path === path)?.dirty
+      || rightPane?.tabs.find((t) => t.path === path)?.dirty;
+
+    if (!alreadyDirty) {
       set((s) => ({
-        tabs: s.tabs.map((t, i) => i === idx ? { ...t, dirty: true } : t),
+        leftPane: {
+          ...s.leftPane,
+          tabs: s.leftPane.tabs.map((t) => t.path === path ? { ...t, dirty: true } : t),
+        },
+        rightPane: s.rightPane ? {
+          ...s.rightPane,
+          tabs: s.rightPane.tabs.map((t) => t.path === path ? { ...t, dirty: true } : t),
+        } : null,
       }));
     }
 
-    // Always reschedule autosave debounce
     if (autosave) {
       const prev = _autosaveTimers.get(path);
       if (prev) clearTimeout(prev);
       _autosaveTimers.set(path, setTimeout(() => {
         _autosaveTimers.delete(path);
-        // Re-resolve index at fire time — tab may have moved
-        const currentIdx = get().tabs.findIndex((t) => t.path === path);
-        if (currentIdx >= 0) get().saveTab(currentIdx, { silent: true });
+        get().saveTab(path, { silent: true });
       }, settings.autosaveDelay));
     }
   },
@@ -364,7 +614,6 @@ export const useStore = create<AppState>((set, get) => ({
   gitStatus:   [],
   gitBranches: [],
 
-  // Single IPC call + single open_repo instead of 3 parallel calls × 3 open_repo
   refreshGit: async () => {
     const { workspaceRoot } = get();
     if (!workspaceRoot) return;
@@ -390,14 +639,22 @@ export const useStore = create<AppState>((set, get) => ({
     const { workspaceRoot } = get();
     try {
       await invoke("git_discard", { repoPath: workspaceRoot, filePath: path });
-      // Reload file content into any open tab
-      const tabs = get().tabs;
-      const idx  = tabs.findIndex((t) => t.path === `${workspaceRoot}/${path}` || t.path === path);
-      if (idx >= 0) {
-        const content = await invoke<string>("read_file", { path: tabs[idx].path });
-        tabContentMap.set(tabs[idx].path, content);
+      const { leftPane, rightPane } = get();
+      const allTabs = [...leftPane.tabs, ...(rightPane?.tabs ?? [])];
+      const tab = allTabs.find((t) => t.path === path || t.path === `${workspaceRoot}/${path}`);
+      if (tab) {
+        const content = await invoke<string>("read_file", { path: tab.path });
+        tabContentMap.set(tab.path, content);
+        const p = tab.path;
         set((s) => ({
-          tabs: s.tabs.map((t, i) => i === idx ? { ...t, dirty: false } : t),
+          leftPane: {
+            ...s.leftPane,
+            tabs: s.leftPane.tabs.map((t) => t.path === p ? { ...t, dirty: false } : t),
+          },
+          rightPane: s.rightPane ? {
+            ...s.rightPane,
+            tabs: s.rightPane.tabs.map((t) => t.path === p ? { ...t, dirty: false } : t),
+          } : null,
         }));
       }
       get().refreshGit();
@@ -422,7 +679,6 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       await invoke("git_checkout", { repoPath: workspaceRoot, branch });
       get().refreshGit();
-      // Reload the file tree — branch switch changes which files exist
       window.dispatchEvent(new CustomEvent("nova:refresh-dir", { detail: workspaceRoot }));
     } catch (e) {
       get().setStatus(`Checkout failed: ${e}`);
@@ -476,15 +732,42 @@ export const useStore = create<AppState>((set, get) => ({
   showSpotify:   false,
   toggleSpotify: () => set((s) => ({ showSpotify: !s.showSpotify })),
 
+  // ── Claude usage ────────────────────────────────────────────────────────────
+  claudeUsageHistory: JSON.parse(localStorage.getItem("claude-usage-history") ?? "{}"),
+  claudeSessionUsage: { input: 0, output: 0, cache: 0 },
+  showClaudeUsage:   false,
+  toggleClaudeUsage: () => set((s) => ({ showClaudeUsage: !s.showClaudeUsage })),
+  addClaudeUsage: (u) => set((s) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const prev  = s.claudeUsageHistory[today] ?? { input: 0, output: 0, cache: 0 };
+    const updated = {
+      ...s.claudeUsageHistory,
+      [today]: {
+        input:  prev.input  + u.input,
+        output: prev.output + u.output,
+        cache:  prev.cache  + u.cache,
+      },
+    };
+    localStorage.setItem("claude-usage-history", JSON.stringify(updated));
+    return {
+      claudeUsageHistory: updated,
+      claudeSessionUsage: {
+        input:  s.claudeSessionUsage.input  + u.input,
+        output: s.claudeSessionUsage.output + u.output,
+        cache:  s.claudeSessionUsage.cache  + u.cache,
+      },
+    };
+  }),
+
   // ── Git panel width ────────────────────────────────────────────────────
   gitPanelWidth:    280,
   setGitPanelWidth: (w) => set({ gitPanelWidth: w }),
 
-  // ── Terminal height (for Spotify tile reactive positioning) ───────────
+  // ── Terminal height ───────────────────────────────────────────────────
   terminalHeight:    260,
   setTerminalHeight: (h) => set({ terminalHeight: h }),
 
-  // ── Cursor position (for status bar LOC) ─────────────────────────────
+  // ── Cursor position ───────────────────────────────────────────────────
   cursorLine: 1,
   cursorCol:  1,
   setCursor:  (line, col) => set({ cursorLine: line, cursorCol: col }),
@@ -519,7 +802,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { presets } = get();
     const preset = presets[idx];
     if (!preset) return;
-    set((s) => {
+    set(() => {
       const next: Settings = {
         ...DEFAULT_SETTINGS,
         ...preset.settings,
@@ -549,7 +832,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { presets, activePresetIdx, loadPreset, setStatus } = get();
     const filled = presets.map((p, i) => (p ? i : -1)).filter((i) => i >= 0);
     if (filled.length === 0) { setStatus("No presets saved yet"); return; }
-    const cur = filled.indexOf(activePresetIdx ?? -1);
+    const cur  = filled.indexOf(activePresetIdx ?? -1);
     const next = filled[(cur + 1) % filled.length];
     loadPreset(next);
   },

@@ -3,7 +3,8 @@ import {
   ChevronRight, ChevronDown,
   FilePlus, FolderPlus, Pencil, Trash2, Copy, FileStack, Clipboard, Search, X,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke }      from "@tauri-apps/api/core";
+import { watch }       from "@tauri-apps/plugin-fs";
 import { useStore, FileEntry } from "../store";
 import { FileIcon }   from "./FileIcon";
 import { FolderIcon } from "./FolderIcon";
@@ -38,8 +39,6 @@ function ContextMenu({
   onCreateIn:      (dir: string, kind: "file" | "folder") => void;
 }) {
   const openFile  = useStore((s) => s.openFile);
-  const closeTab  = useStore((s) => s.closeTab);
-  const tabs      = useStore((s) => s.tabs);
   const setStatus = useStore((s) => s.setStatus);
   const ref       = useRef<HTMLDivElement>(null);
 
@@ -58,10 +57,21 @@ function ContextMenu({
   const doDelete = async () => {
     onClose();
     try {
-      // Close any open tabs for this path (or children if dir)
-      tabs.forEach((t, i) => {
-        if (t.path === entry.path || t.path.startsWith(entry.path + "/")) closeTab(i);
-      });
+      // Close any open tabs (in both panes) for this path (or children if dir)
+      const st = useStore.getState();
+      const allPanes: Array<{ pane: typeof st.leftPane; key: "left" | "right" }> = [
+        { pane: st.leftPane, key: "left" },
+        ...(st.rightPane ? [{ pane: st.rightPane, key: "right" as const }] : []),
+      ];
+      for (const { pane, key } of allPanes) {
+        // Iterate in reverse so indices stay valid after each close
+        for (let i = pane.tabs.length - 1; i >= 0; i--) {
+          const t = pane.tabs[i];
+          if (t.path === entry.path || t.path.startsWith(entry.path + "/")) {
+            st.closeTab(i, key);
+          }
+        }
+      }
       await invoke("delete_file", { path: entry.path });
       setStatus(`Deleted ${entry.name}`);
       if (parentDir === workspaceRoot) onRefreshRoot();
@@ -175,7 +185,10 @@ const TreeNode = memo(function TreeNode({
   const [children, setChildren] = useState<FileEntry[]>([]);
   const toggleDir    = useStore((s) => s.toggleDir);
   const openFile     = useStore((s) => s.openFile);
-  const activeTab    = useStore((s) => s.tabs[s.activeTabIdx]?.path);
+  const activeTab    = useStore((s) => {
+    const focused = s.focusedPane === "right" && s.rightPane ? s.rightPane : s.leftPane;
+    return focused.tabs[focused.activeIdx]?.path;
+  });
   const renameRef    = useRef<HTMLInputElement>(null);
   const [renameVal, setRenameVal] = useState("");
 
@@ -337,8 +350,6 @@ export function FileTree() {
   const toggleFileTree = useStore((s) => s.toggleFileTree);
   const sidebarWidth   = useStore((s) => s.settings.sidebarWidth);
   const updateSettings = useStore((s) => s.updateSettings);
-  const tabs           = useStore((s) => s.tabs);
-  const closeTab       = useStore((s) => s.closeTab);
 
   const onDragStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -367,6 +378,48 @@ export function FileTree() {
   }, [workspaceRoot]);
 
   useEffect(() => { refreshRoots(); }, [refreshRoots]);
+
+  // ── Live filesystem watcher ───────────────────────────────────────────────
+  // Watches the entire workspace recursively. Debounces events so rapid bursts
+  // (e.g. Claude writing multiple files) produce a single refresh.
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    let stopFn: (() => void) | null = null;
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    const affectedDirs = new Set<string>();
+
+    const flush = () => {
+      refreshRoots();
+      for (const dir of affectedDirs) {
+        window.dispatchEvent(new CustomEvent("nova:refresh-dir", { detail: dir }));
+      }
+      affectedDirs.clear();
+      setRefreshSignal((n) => n + 1);
+    };
+
+    watch(
+      workspaceRoot,
+      (event) => {
+        // Collect the parent dirs of every changed path
+        for (const p of event.paths ?? []) {
+          const dir = p.includes("/") ? p.substring(0, p.lastIndexOf("/")) : workspaceRoot;
+          affectedDirs.add(dir);
+        }
+        // Debounce: flush after 300 ms of quiet
+        if (debounce) clearTimeout(debounce);
+        debounce = setTimeout(flush, 300);
+      },
+      { recursive: true },
+    )
+      .then((stop) => { stopFn = stop; })
+      .catch((e) => { console.warn("[nova] fs watch unavailable:", e); });
+
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      stopFn?.();
+    };
+  }, [workspaceRoot, refreshRoots]);
+
 
   useEffect(() => {
     if (creating) { setNewName(""); setTimeout(() => inputRef.current?.focus(), 0); }
@@ -407,13 +460,20 @@ export function FileTree() {
     try {
       await invoke("rename_path", { from: entry.path, to: newPath });
       setStatus(`Renamed to ${newNameVal}`);
-      // Update any open tab pointing to the old path
-      tabs.forEach((t, i) => {
-        if (t.path === entry.path) {
-          closeTab(i);
-          openFile(newPath);
+      // Close old path in all panes and reopen as new path
+      const st = useStore.getState();
+      const allPanes: Array<{ pane: typeof st.leftPane; key: "left" | "right" }> = [
+        { pane: st.leftPane, key: "left" },
+        ...(st.rightPane ? [{ pane: st.rightPane, key: "right" as const }] : []),
+      ];
+      for (const { pane, key } of allPanes) {
+        for (let i = pane.tabs.length - 1; i >= 0; i--) {
+          if (pane.tabs[i].path === entry.path) st.closeTab(i, key);
         }
-      });
+      }
+      if (allPanes.some(({ pane }) => pane.tabs.some((t) => t.path === entry.path))) {
+        openFile(newPath);
+      }
       if (parentDir === workspaceRoot) refreshRoots();
       else window.dispatchEvent(new CustomEvent("nova:refresh-dir", { detail: parentDir }));
       setRefreshSignal((n) => n + 1);

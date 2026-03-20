@@ -231,6 +231,10 @@ function TerminalPane({
   const roRef          = useRef<ResizeObserver | null>(null);
   const oscDisposables = useRef<Array<{ dispose(): void }>>([]);
   const inited         = useRef(false);
+  // true  = viewport is at the bottom (follow new output)
+  // false = user scrolled up (don't force-scroll on new output or resize)
+  const atBottomRef    = useRef(true);
+  const resizeTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Stable refs for callbacks registered once at init time
   const rOnZoom      = useRef(onZoom);
@@ -304,6 +308,13 @@ function TerminalPane({
     rOnAddon.current(search);
     rOnTermReady.current(term);
 
+    // Track whether the viewport is at the bottom so resize + output don't
+    // force-scroll the user back down when they've deliberately scrolled up.
+    term.onScroll(() => {
+      const buf = term.buffer.active;
+      atBottomRef.current = buf.viewportY >= buf.length - term.rows;
+    });
+
     // ── OSC handlers — store disposables so we can clean up on unmount ─────
     oscDisposables.current.push(
       term.parser.registerOscHandler(0, (data) => { rOnTitle.current(data); return true; }),
@@ -340,12 +351,9 @@ function TerminalPane({
         if (sel) { navigator.clipboard.writeText(sel); return false; }
         return true; // fall through → SIGINT
       }
-      if (meta && e.key === "v") {
-        navigator.clipboard.readText().then((text) => {
-          if (text) invoke("pty_write", { sessionId: session.id, data: text }).catch(() => {});
-        });
-        return false;
-      }
+      // Cmd+V: let xterm handle paste natively via its onData path.
+      // Intercepting it here caused double-paste: our manual clipboard read
+      // fired AND xterm's built-in paste event wrote via onData simultaneously.
       if (meta && e.key === "k") {
         termRef.current?.clear();
         invoke("pty_write", { sessionId: session.id, data: "clear\r" }).catch(() => {});
@@ -362,17 +370,23 @@ function TerminalPane({
     term.onData((data) => invoke("pty_write", { sessionId: session.id, data }).catch(() => {}));
 
     // ResizeObserver → refit.
-    // Guard: skip if the container has no size (display:none) to prevent
-    // sending a 0×0 resize to the PTY which corrupts line-wrapping.
+    // Debounced at 50ms so rapid resize events (drag, window resize) don't
+    // cause continuous redraws that produce visual glitches and scroll jumps.
     const ro = new ResizeObserver(() => {
-      requestAnimationFrame(() => {
-        const container = containerRef.current;
-        if (!fitRef.current || !termRef.current || !container) return;
-        if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
-        fitRef.current.fit();
-        const { rows, cols } = termRef.current;
-        invoke("pty_resize", { sessionId: session.id, rows, cols }).catch(() => {});
-      });
+      if (resizeTimer.current) clearTimeout(resizeTimer.current);
+      resizeTimer.current = setTimeout(() => {
+        resizeTimer.current = null;
+        requestAnimationFrame(() => {
+          const container = containerRef.current;
+          if (!fitRef.current || !termRef.current || !container) return;
+          if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
+          const wasAtBottom = atBottomRef.current;
+          fitRef.current.fit();
+          if (wasAtBottom) termRef.current.scrollToBottom();
+          const { rows, cols } = termRef.current;
+          invoke("pty_resize", { sessionId: session.id, rows, cols }).catch(() => {});
+        });
+      }, 50);
     });
     ro.observe(containerRef.current);
     roRef.current = ro;
@@ -429,7 +443,9 @@ function TerminalPane({
       const container = containerRef.current;
       if (!fitRef.current || !termRef.current || !container) return;
       if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
+      const wasAtBottom = atBottomRef.current;
       fitRef.current.fit();
+      if (wasAtBottom) termRef.current.scrollToBottom();
       const { rows, cols } = termRef.current;
       invoke("pty_resize", { sessionId: session.id, rows, cols }).catch(() => {});
       if (focused) termRef.current.focus();

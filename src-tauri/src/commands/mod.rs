@@ -1,3 +1,4 @@
+pub mod claude;
 pub mod files;
 pub mod git;
 pub mod pty;
