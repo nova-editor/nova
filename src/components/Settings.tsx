@@ -593,29 +593,6 @@ export function SettingsPanel() {
             </div>
           </div>
 
-          {/* ── AI ── */}
-          <div>
-            <SectionLabel>AI</SectionLabel>
-            <div className="rounded-lg overflow-hidden border border-editor-border/30">
-              <div className="flex flex-col gap-1 py-2.5 px-0 border-b border-editor-border/30">
-                <div className="flex items-center justify-between gap-4 px-0">
-                  <span className="text-xs text-editor-comment">Anthropic API Key</span>
-                </div>
-                <input
-                  type="password"
-                  value={settings.claudeApiKey ?? ""}
-                  onChange={(e) => updateSettings({ claudeApiKey: e.target.value })}
-                  placeholder="sk-ant-…"
-                  className="w-full bg-transparent text-xs font-mono text-editor-fg outline-none placeholder-editor-comment/40 py-1"
-                  style={{ fontFamily: "'JetBrains Mono', monospace" }}
-                />
-                <span className="text-2xs text-editor-comment/50" style={{ fontSize: 9 }}>
-                  Used by Claude direct API chat (⌘⇧A). Stored locally only.
-                </span>
-              </div>
-            </div>
-          </div>
-
           {/* ── Updates ── */}
           <UpdatesSection />
 

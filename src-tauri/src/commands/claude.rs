@@ -21,6 +21,7 @@ pub async fn claude_cli_chat(
     claude_path:     String,
     prompt:          String,
     resume_session:  Option<String>,
+    allowed_tools:   Option<String>,
 ) -> Result<(), String> {
     let mut args = vec![
         "-p".to_string(),
@@ -29,7 +30,15 @@ pub async fn claude_cli_chat(
         "stream-json".to_string(),
         "--verbose".to_string(),
         "--dangerously-skip-permissions".to_string(),
+        "--model".to_string(),
+        "claude-haiku-4-5-20251001".to_string(),
+        "--effort".to_string(),
+        "low".to_string(),
     ];
+    if let Some(tools) = allowed_tools {
+        args.push("--allowedTools".to_string());
+        args.push(tools);
+    }
     if let Some(sid) = resume_session {
         args.push("--resume".to_string());
         args.push(sid);

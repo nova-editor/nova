@@ -318,6 +318,31 @@
     .spotify-desc { font-size: .8rem; color: var(--fgm); line-height: 1.6; }
     .spotify-kbd { margin-left: auto; flex-shrink: 0; }
 
+    /* ── AI AGENTS ─────────────────────────────────────── */
+    .ai-section {
+      max-width: 1000px; margin: 0 auto 6rem;
+      padding: 0 2rem;
+    }
+    .ai-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 1.5rem; }
+    .ai-title { font-size: 1.1rem; font-weight: 300; letter-spacing: -.02em; color: var(--fgb); }
+    .ai-sub { font-size: .75rem; color: var(--fgm); display: flex; align-items: center; gap: .25rem; }
+    .ai-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    .ai-card { background: var(--bg); padding: 1.8rem 1.6rem; transition: background .15s; position: relative; }
+    .ai-card:hover { background: var(--surface); }
+    .ai-card-accent { position: absolute; top: 0; left: 0; right: 0; height: 2px; opacity: .45; }
+    .ai-card-logo { margin-bottom: 1.1rem; display: flex; align-items: center; gap: .65rem; }
+    .ai-card-name { font-size: .95rem; font-weight: 500; color: var(--fgb); letter-spacing: -.01em; }
+    .ai-card-by { font-size: .7rem; color: var(--fgm); }
+    .ai-card-tagline { font-size: .78rem; color: var(--fgm); line-height: 1.6; margin-top: .5rem; }
+    .ai-card-install {
+      display: inline-block; margin-top: 1.2rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .62rem; color: var(--fgm);
+      background: var(--raised); border: 1px solid var(--border);
+      padding: .35rem .6rem; border-radius: 4px;
+    }
+    @media(max-width:700px) { .ai-cards { grid-template-columns: 1fr; } }
+
     /* ── STACK ─────────────────────────────────────────── */
     .stack {
       max-width: 1000px; margin: 0 auto 6rem;
@@ -395,6 +420,7 @@
   </div>
   <div class="nav-links">
     <a href="#features">Features</a>
+    <a href="#ai">AI</a>
     <a href="#themes">Themes</a>
     <a href="#shortcuts">Shortcuts</a>
     <a href="manual.html">Manual</a>
@@ -409,7 +435,7 @@
 <section class="hero">
   <div class="hero-tag">Windows · macOS · Linux · Tauri · CodeMirror</div>
   <h1 class="hero-h1"><span class="dim">write code.</span><br /><em>not configuration.</em></h1>
-  <p class="hero-sub">vim · 16 themes · terminal · git · spotify · presets<br />native desktop — zero config files</p>
+  <p class="hero-sub">vim · 16 themes · terminal · git · spotify · presets<br />claude · gemini · codex — native desktop, zero config files</p>
   <div id="download">
     <div class="hero-ctas">
       <a id="dl-primary" href="downloads/nova_LATEST_aarch64.dmg" class="cta-primary" download>
@@ -508,6 +534,10 @@
   <div class="strip-item">
     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     <span><span class="strip-val">0</span> config files</span>
+  </div>
+  <div class="strip-item">
+    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+    <span><span class="strip-val">3</span> AI agents</span>
   </div>
 </div>
 
@@ -626,6 +656,17 @@
       <div class="feat-kbd"><kbd>⌘</kbd><kbd>\</kbd></div>
     </div>
 
+    <div class="feat-row">
+      <div class="feat-name-wrap">
+        <span class="feat-icon">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </span>
+        <span class="feat-name">AI Agents</span>
+      </div>
+      <p class="feat-desc">Run Claude Code, Gemini, or Codex directly inside nova. Each opens as a full PTY terminal tab — agentic coding, multi-file edits, and autonomous task execution without leaving the editor.</p>
+      <div class="feat-kbd"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>C</kbd></div>
+    </div>
+
   </div>
 </section>
 
@@ -673,6 +714,66 @@
       <div style="display:flex;align-items:center;gap:2px;"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>M</kbd></div>
       <div style="font-family:'JetBrains Mono',monospace;font-size:.6rem;color:var(--fgm);margin-top:.4rem;text-align:right;">toggle</div>
     </div>
+  </div>
+</section>
+
+<!-- AI AGENTS -->
+<section class="ai-section appear" id="ai">
+  <div class="ai-header">
+    <div>
+      <div class="section-label" style="margin-bottom:.5rem">AI Agents</div>
+      <div class="ai-title">Three agentic coding engines.</div>
+    </div>
+    <div class="ai-sub">One shortcut — <kbd>⌘</kbd><kbd>⇧</kbd><kbd>C</kbd> — opens the picker.</div>
+  </div>
+  <div class="ai-cards">
+
+    <div class="ai-card">
+      <div class="ai-card-accent" style="background:#c96442;"></div>
+      <div class="ai-card-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M13.5 2L21 20H16.5L15 16H9L7.5 20H3L10.5 2H13.5ZM12 7L10 13H14L12 7Z" fill="#c96442"/>
+        </svg>
+        <div>
+          <div class="ai-card-name">Claude Code</div>
+          <div class="ai-card-by">Anthropic</div>
+        </div>
+      </div>
+      <p class="ai-card-tagline">Agentic coding — reads, edits, and runs your codebase end-to-end. Understands full project context across files.</p>
+      <code class="ai-card-install">npm i -g @anthropic-ai/claude-code</code>
+    </div>
+
+    <div class="ai-card">
+      <div class="ai-card-accent" style="background:#4285F4;"></div>
+      <div class="ai-card-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2C6.5 12 2 12 12 22C22 12 17.5 12 12 2Z" fill="#4285F4" opacity=".9"/>
+          <path d="M2 12C12 6.5 12 2 22 12C12 17.5 12 22 2 12Z" fill="#4285F4" opacity=".45"/>
+        </svg>
+        <div>
+          <div class="ai-card-name">Gemini</div>
+          <div class="ai-card-by">Google</div>
+        </div>
+      </div>
+      <p class="ai-card-tagline">Multimodal AI with 1M-token context. Built for massive codebases where other agents hit limits.</p>
+      <code class="ai-card-install">npm i -g @google/gemini-cli</code>
+    </div>
+
+    <div class="ai-card">
+      <div class="ai-card-accent" style="background:#10a37f;"></div>
+      <div class="ai-card-logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z" fill="#10a37f"/>
+        </svg>
+        <div>
+          <div class="ai-card-name">Codex</div>
+          <div class="ai-card-by">OpenAI</div>
+        </div>
+      </div>
+      <p class="ai-card-tagline">Cloud-sandboxed agent that writes, tests, and fixes code autonomously. Runs in an isolated environment.</p>
+      <code class="ai-card-install">npm i -g @openai/codex</code>
+    </div>
+
   </div>
 </section>
 
@@ -758,6 +859,7 @@
     <div class="kbd-row"><span class="kbd-action">Font size down</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>–</kbd></span></div>
     <div class="kbd-row"><span class="kbd-action">New window</span>           <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd></span></div>
     <div class="kbd-row"><span class="kbd-action">Cycle preset</span>         <span class="kbd-combo"><kbd>⌘</kbd><kbd>\</kbd></span></div>
+    <div class="kbd-row"><span class="kbd-action">Open AI agents</span>       <span class="kbd-combo"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>C</kbd></span></div>
   </div>
 </section>
 
@@ -772,6 +874,7 @@
   <div class="footer-links">
     <a href="manual.html">Manual</a>
     <a href="#features">Features</a>
+    <a href="#ai">AI</a>
     <a href="#themes">Themes</a>
     <a href="#shortcuts">Shortcuts</a>
     <a href="#download">Download</a>

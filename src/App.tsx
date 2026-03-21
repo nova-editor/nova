@@ -21,7 +21,7 @@ import { CommandPalette }  from "./components/CommandPalette";
 import { HelpPanel }       from "./components/HelpPanel";
 import { AITerminal }      from "./components/AITerminal";
 import { AILauncherPage }  from "./components/AILauncherPage";
-import { ClaudeChat }      from "./components/ClaudeChat";
+import { PinnedTerminal }  from "./components/PinnedTerminal";
 import { SettingsPanel }   from "./components/Settings";
 import { SpotifyPlayer }   from "./components/SpotifyPlayer";
 
@@ -74,9 +74,10 @@ export default function App() {
   const showSpotify       = useStore((s) => s.showSpotify);
   const toggleSpotify     = useStore((s) => s.toggleSpotify);
   const cyclePreset       = useStore((s) => s.cyclePreset);
-  const openAiTab         = useStore((s) => s.openAiTab);
+  const openAiTab             = useStore((s) => s.openAiTab);
+  const openPinnedTerminal    = useStore((s) => s.openPinnedTerminal);
+
   const openAiLauncher    = useStore((s) => s.openAiLauncher);
-  const openClaudeApiTab  = useStore((s) => s.openClaudeApiTab);
   const splitEditor       = useStore((s) => s.splitEditor);
   const closeSplit        = useStore((s) => s.closeSplit);
   const settings          = useStore((s) => s.settings);
@@ -177,9 +178,9 @@ export default function App() {
         if (ctrl && e.key === ",") { e.preventDefault(); toggleSettings();  return; }
         if (ctrl && e.key === "h") { e.preventDefault(); toggleHelp();      return; }
         if (ctrl && e.shiftKey && (e.key === "O" || e.key === "o")) { e.preventDefault(); openFolder(); return; }
-        if (ctrl && e.shiftKey && (e.key === "A" || e.key === "a")) { e.preventDefault(); openClaudeApiTab(); return; }
-        if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault(); openAiLauncher(); return; }
+if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault(); openAiLauncher(); return; }
         if (ctrl && e.shiftKey && (e.key === "M" || e.key === "m")) { e.preventDefault(); toggleSpotify(); return; }
+        if (ctrl && e.shiftKey && (e.key === "L" || e.key === "l")) { e.preventDefault(); openPinnedTerminal(); return; }
         if (ctrl && e.key === "\\") { e.preventDefault(); cyclePreset(); return; }
         if (ctrl && e.key === "n" && !e.shiftKey) { e.preventDefault(); window.dispatchEvent(new CustomEvent("nova:new-file")); return; }
         if (ctrl && e.key === "t") { e.preventDefault(); window.dispatchEvent(new CustomEvent("nova:new-terminal")); return; }
@@ -235,7 +236,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
     fuzzyOpen, paletteOpen,
-    toggleFileTree, toggleTerminal, toggleGitPanel, toggleSettings, toggleHelp, toggleSpotify, cyclePreset, openAiLauncher, openClaudeApiTab, openFolder,
+    toggleFileTree, toggleTerminal, toggleGitPanel, toggleSettings, toggleHelp, toggleSpotify, cyclePreset, openAiLauncher, openPinnedTerminal, openFolder,
     setFuzzyOpen, setPaletteOpen,
     settings.editor.fontSize, updateSettings,
   ]);
@@ -446,7 +447,7 @@ export default function App() {
               onClick={() => setFocusedPane("left")}
             >
               {leftActiveTab?.kind === "ai-launcher" && <AILauncherPage tabPath={leftActiveTab.path} />}
-              {leftActiveTab && leftActiveTab.kind !== "ai" && leftActiveTab.kind !== "ai-launcher" && leftActiveTab.kind !== "claude-api" && (
+              {leftActiveTab && leftActiveTab.kind !== "ai" && leftActiveTab.kind !== "ai-launcher" && leftActiveTab.kind !== "pinned-terminal" && (
                 <Editor tab={leftActiveTab} showMdPreview={showMdPreview} />
               )}
               {!leftActiveTab && (
@@ -487,9 +488,9 @@ export default function App() {
                   visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
                 />
               ))}
-              {/* Claude API chat tabs — left pane */}
-              {leftPane.tabs.filter((t) => t.kind === "claude-api").map((t) => (
-                <ClaudeChat
+              {/* Pinned terminal tabs — left pane */}
+              {leftPane.tabs.filter((t) => t.kind === "pinned-terminal").map((t) => (
+                <PinnedTerminal
                   key={t.path}
                   visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
                 />
@@ -517,7 +518,7 @@ export default function App() {
               >
                 {/* Render editor only for non-AI, non-launcher active tabs */}
                 {rightActiveTab?.kind === "ai-launcher" && <AILauncherPage tabPath={rightActiveTab.path} />}
-                {rightActiveTab && rightActiveTab.kind !== "ai" && rightActiveTab.kind !== "ai-launcher" && rightActiveTab.kind !== "claude-api" && (
+                {rightActiveTab && rightActiveTab.kind !== "ai" && rightActiveTab.kind !== "ai-launcher" && rightActiveTab.kind !== "pinned-terminal" && (
                   <Editor tab={rightActiveTab} showMdPreview={false} />
                 )}
 
@@ -529,9 +530,9 @@ export default function App() {
                     visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
                   />
                 ))}
-                {/* Claude API chat tabs — right pane */}
-                {rightPane.tabs.filter((t) => t.kind === "claude-api").map((t) => (
-                  <ClaudeChat
+                {/* Pinned terminal tabs — right pane */}
+                {rightPane.tabs.filter((t) => t.kind === "pinned-terminal").map((t) => (
+                  <PinnedTerminal
                     key={t.path}
                     visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
                   />

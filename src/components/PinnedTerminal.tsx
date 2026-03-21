@@ -1,20 +1,15 @@
 /**
- * ClaudeTerminal — Claude Code CLI running as a full editor-area tab.
+ * PinnedTerminal — a regular shell terminal that lives as an editor-area tab.
  *
- * Spawns `claude` via the existing PTY backend (pty_spawn / pty_write /
- * pty_resize / pty_kill). The component stays mounted (display:none) when
- * its tab is hidden so the Claude session is preserved while you edit files.
+ * Spawns the user's default shell via the existing PTY backend (pty_spawn /
+ * pty_write / pty_resize / pty_kill). Stays mounted (display:none) when its
+ * tab is hidden so the shell session is preserved while you edit files.
  *
- * Mode toggle:
- *   chat  — disables Bash, Edit, Write, MultiEdit, NotebookEdit (read-only, cheaper)
- *   agent — full tool access (default)
- *
- * Switching mode kills the current PTY and spawns a fresh one with the
- * appropriate --disallowedTools flag. xterm instance is reused.
+ * Open with ⌘⇧L. Same opacity / blue tint as ClaudeTerminal.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Terminal as XTerm, ITheme }   from "@xterm/xterm";
+import { useEffect, useRef, useState } from "react";
+import { Terminal as XTerm, ITheme } from "@xterm/xterm";
 import { FitAddon }       from "@xterm/addon-fit";
 import { WebLinksAddon }  from "@xterm/addon-web-links";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
@@ -23,12 +18,9 @@ import "@xterm/xterm/css/xterm.css";
 import { invoke }               from "@tauri-apps/api/core";
 import { listen, UnlistenFn }   from "@tauri-apps/api/event";
 import { useStore }             from "../store";
-import { Search, X, Bot }       from "lucide-react";
-import { AnthropicLogo }        from "./AiLogos";
+import { Search, X } from "lucide-react";
 
-type Mode = "chat" | "agent";
-
-// ── Per-theme xterm palettes (mirrors Terminal.tsx) ───────────────────────────
+// ── Per-theme xterm palettes (mirrors ClaudeTerminal.tsx) ────────────────────
 const TERM_THEMES: Record<string, ITheme> = {
   atomDark: {
     background:"#1c1f26", foreground:"#ABB2BF", cursor:"#528BFF", cursorAccent:"#1c1f26", selectionBackground:"#3E4451",
@@ -87,15 +79,7 @@ function getTermTheme(name: string): ITheme {
   return { ...t, background: "transparent" };
 }
 
-// ── Args per mode ─────────────────────────────────────────────────────────────
-function modeArgs(mode: Mode): string[] {
-  if (mode === "chat") {
-    return ["--allowedTools", "Read,WebSearch"];
-  }
-  return [];
-}
-
-// ── Search overlay (same pattern as Terminal.tsx) ─────────────────────────────
+// ── Search overlay ────────────────────────────────────────────────────────────
 function SearchBar({ addon, onClose }: { addon: SearchAddon | null; onClose: () => void }) {
   const [q, setQ]   = useState("");
   const [cs, setCs] = useState(false);
@@ -134,83 +118,40 @@ function SearchBar({ addon, onClose }: { addon: SearchAddon | null; onClose: () 
   );
 }
 
-// ── Mode toggle pill ───────────────────────────────────────────────────────────
-function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center",
-      border: "1px solid rgb(var(--c-border) / 0.5)",
-      borderRadius: 6, overflow: "hidden",
-    }}>
-      {(["chat", "agent"] as Mode[]).map((m) => {
-        const active = mode === m;
-        return (
-          <button
-            key={m}
-            onClick={() => onChange(m)}
-            style={{
-              padding: "3px 10px",
-              fontSize: 10,
-              fontFamily: "'JetBrains Mono', monospace",
-              fontWeight: active ? 600 : 400,
-              letterSpacing: "0.03em",
-              background: active ? "rgb(var(--c-accent) / 0.15)" : "transparent",
-              color: active ? "rgb(var(--c-accent))" : "rgb(var(--c-comment))",
-              border: "none",
-              borderRight: m === "chat" ? "1px solid rgb(var(--c-border) / 0.5)" : "none",
-              cursor: active ? "default" : "pointer",
-              transition: "background 0.15s, color 0.15s",
-            }}
-          >
-            {m}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
-interface ClaudeTerminalProps {
+interface PinnedTerminalProps {
   /** When false: component stays mounted (display:none) to keep the PTY alive. */
   visible: boolean;
 }
 
-export function ClaudeTerminal({ visible }: ClaudeTerminalProps) {
-  const containerRef   = useRef<HTMLDivElement>(null);
-  const termRef        = useRef<XTerm | null>(null);
-  const fitRef         = useRef<FitAddon | null>(null);
-  const searchRef      = useRef<SearchAddon | null>(null);
-  const unlistenRef    = useRef<UnlistenFn | null>(null);
-  const roRef          = useRef<ResizeObserver | null>(null);
-  const xtermInited    = useRef(false); // xterm created once per mount
-  const ptyInited      = useRef(false); // PTY spawned — reset on mode switch
+export function PinnedTerminal({ visible }: PinnedTerminalProps) {
+  const containerRef  = useRef<HTMLDivElement>(null);
+  const termRef       = useRef<XTerm | null>(null);
+  const fitRef        = useRef<FitAddon | null>(null);
+  const searchRef     = useRef<SearchAddon | null>(null);
+  const unlistenRef   = useRef<UnlistenFn | null>(null);
+  const roRef         = useRef<ResizeObserver | null>(null);
+  const xtermInited   = useRef(false);
+  const ptyInited     = useRef(false);
 
-  // Stable session id — regenerated on mode switch.
   const sessionId = useRef("");
-  if (!sessionId.current) sessionId.current = "claude-" + crypto.randomUUID();
-
-  // Keep mode in a ref so spawn closures always read the current value.
-  const modeRef = useRef<Mode>("agent");
+  if (!sessionId.current) sessionId.current = "pinned-" + crypto.randomUUID();
 
   const themeName    = useStore((s) => s.settings.editor.theme);
   const termSettings = useStore((s) => s.settings.terminal);
   const cwd          = useStore((s) => s.workspaceRoot) || ".";
 
-  const [claudePath,  setClaudePath]  = useState<string | null>(null);
-  const [findError,   setFindError]   = useState<string | null>(null);
-  const [showSearch,  setShowSearch]  = useState(false);
-  const [mode,        setMode]        = useState<Mode>("agent");
-  const [restartKey,  setRestartKey]  = useState(0);
+  const [shell,      setShell]      = useState<string | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
 
-  // ── Locate claude binary once ─────────────────────────────────────────────
+  // ── Detect default shell once ─────────────────────────────────────────────
   useEffect(() => {
-    invoke<string>("find_claude_path")
-      .then((p) => setClaudePath(p))
-      .catch((e: unknown) => setFindError(String(e)));
+    invoke<string[]>("get_shells")
+      .then((shells) => setShell(shells[0] ?? "/bin/zsh"))
+      .catch(() => setShell("/bin/zsh"));
   }, []);
 
-  // ── Cleanup on unmount — kills PTY and disposes xterm ────────────────────
+  // ── Cleanup on unmount ────────────────────────────────────────────────────
   useEffect(() => {
     const id = sessionId.current;
     return () => {
@@ -225,34 +166,10 @@ export function ClaudeTerminal({ visible }: ClaudeTerminalProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Switch mode: kill PTY, write separator, respawn with new args ─────────
-  const switchMode = useCallback((newMode: Mode) => {
-    if (newMode === modeRef.current) return;
-    modeRef.current = newMode;
-
-    // Detach old event listener before killing so stale output is dropped.
-    unlistenRef.current?.();
-    unlistenRef.current = null;
-
-    invoke("pty_kill", { sessionId: sessionId.current }).catch(() => {});
-
-    // Fresh session ID so old pty-output events don't bleed into new session.
-    sessionId.current = "claude-" + crypto.randomUUID();
-    ptyInited.current = false;
-
-    termRef.current?.writeln("\r\n\x1b[90m───────────────────────────────────────────────────\x1b[0m");
-    termRef.current?.writeln(`\x1b[90m  switching to ${newMode} mode…\x1b[0m`);
-    termRef.current?.writeln("\x1b[90m───────────────────────────────────────────────────\x1b[0m\r\n");
-
-    setMode(newMode);
-    setRestartKey((k) => k + 1);
-  }, []);
-
-  // ── Initialise xterm (once) + spawn PTY (per restartKey) ─────────────────
+  // ── Initialise xterm (once) + spawn PTY ──────────────────────────────────
   useEffect(() => {
-    if (!claudePath || !visible || !containerRef.current) return;
+    if (!shell || !visible || !containerRef.current) return;
 
-    // Create xterm instance only once per component lifetime.
     if (!xtermInited.current) {
       xtermInited.current = true;
 
@@ -307,12 +224,12 @@ export function ClaudeTerminal({ visible }: ClaudeTerminalProps) {
         return true;
       });
 
-      // User input → PTY (always uses the current sessionId ref)
+      // User input → PTY
       term.onData((data) =>
         invoke("pty_write", { sessionId: sessionId.current, data }).catch(() => {})
       );
 
-      // ResizeObserver → refit (guards against 0×0 on hidden container)
+      // ResizeObserver → refit
       const ro = new ResizeObserver(() => {
         requestAnimationFrame(() => {
           const container = containerRef.current;
@@ -327,13 +244,11 @@ export function ClaudeTerminal({ visible }: ClaudeTerminalProps) {
       roRef.current = ro;
     }
 
-    // ── Spawn PTY — runs on first mount and on every mode switch ─────────
+    // ── Spawn PTY ─────────────────────────────────────────────────────────
     if (ptyInited.current) return;
     ptyInited.current = true;
 
-    const sid         = sessionId.current;
-    const currentMode = modeRef.current;
-    const args        = modeArgs(currentMode);
+    const sid = sessionId.current;
 
     let listenCancelled = false;
     listen<string>(`pty-output-${sid}`, (ev) =>
@@ -359,17 +274,17 @@ export function ClaudeTerminal({ visible }: ClaudeTerminalProps) {
         cwd,
         rows,
         cols,
-        shell: claudePath,
-        args:  args.length > 0 ? args : null,
+        shell,
+        args: null,
       }).catch((err) => {
-        termRef.current?.writeln(`\x1b[31mFailed to start claude: ${err}\x1b[0m`);
+        termRef.current?.writeln(`\x1b[31mFailed to start shell: ${err}\x1b[0m`);
       });
     };
     requestAnimationFrame(doSpawn);
 
     return () => { spawnCancelled = true; listenCancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [claudePath, visible, restartKey]);
+  }, [shell, visible]);
 
   // ── Refit + focus when visibility changes ─────────────────────────────────
   useEffect(() => {
@@ -426,70 +341,8 @@ export function ClaudeTerminal({ visible }: ClaudeTerminalProps) {
         WebkitBackdropFilter: "blur(20px) saturate(1.4)",
       }}
     >
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "6px 12px",
-        borderBottom: "1px solid rgb(var(--c-border) / 0.5)",
-        flexShrink: 0,
-      }}>
-        <AnthropicLogo size={13} style={{ color: "#D97757" }} />
-        <span style={{
-          fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
-          fontWeight: 600, color: "rgb(var(--c-fg))",
-        }}>
-          Claude
-        </span>
-        <span style={{
-          fontSize: 9, fontFamily: "'JetBrains Mono', monospace",
-          color: "rgb(var(--c-comment))", opacity: 0.5,
-        }}>
-          terminal
-        </span>
-        <div style={{ flex: 1 }} />
-        <ModeToggle mode={mode} onChange={switchMode} />
-      </div>
-
       {/* ── Terminal area ────────────────────────────────────────────────── */}
       <div style={{ flex: 1, position: "relative", overflow: "hidden" }}>
-
-        {/* Error: claude not found */}
-        {findError && (
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-5 select-none"
-            style={{ background: "rgb(var(--c-deep))" }}
-          >
-            <Bot size={36} style={{ color: "rgb(var(--c-accent) / 0.25)" }} />
-            <div className="flex flex-col items-center gap-2 text-center max-w-xs">
-              <span style={{ color: "rgb(var(--c-fg))", fontSize: 13, fontFamily: "'JetBrains Mono', monospace" }}>
-                Claude CLI not found
-              </span>
-              <pre
-                style={{
-                  color:      "rgb(var(--c-comment))",
-                  fontSize:   11,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  whiteSpace: "pre-wrap",
-                  textAlign:  "center",
-                }}
-              >
-                {findError}
-              </pre>
-            </div>
-          </div>
-        )}
-
-        {/* Loading: locating binary */}
-        {!claudePath && !findError && (
-          <div
-            className="absolute inset-0 flex items-center justify-center"
-            style={{ background: "rgb(var(--c-deep))" }}
-          >
-            <span style={{ color: "rgb(var(--c-comment))", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}>
-              locating claude…
-            </span>
-          </div>
-        )}
 
         {/* Search overlay */}
         {showSearch && (

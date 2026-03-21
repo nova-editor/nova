@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+
+type Mode = "chat" | "agent";
 import { Terminal as XTerm, ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -151,6 +153,40 @@ const PROVIDER_INFO: Record<AiProvider, {
   },
 };
 
+// ── Mode toggle pill (Claude-only) ────────────────────────────────────────────
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center",
+      border: "1px solid rgb(var(--c-border) / 0.5)",
+      borderRadius: 6, overflow: "hidden",
+    }}>
+      {(["chat", "agent"] as Mode[]).map((m) => {
+        const active = mode === m;
+        return (
+          <button
+            key={m}
+            onClick={() => onChange(m)}
+            style={{
+              padding: "3px 10px", fontSize: 10,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontWeight: active ? 600 : 400, letterSpacing: "0.03em",
+              background: active ? "rgb(var(--c-accent) / 0.15)" : "transparent",
+              color: active ? "rgb(var(--c-accent))" : "rgb(var(--c-comment))",
+              border: "none",
+              borderRight: m === "chat" ? "1px solid rgb(var(--c-border) / 0.5)" : "none",
+              cursor: active ? "default" : "pointer",
+              transition: "background 0.15s, color 0.15s",
+            }}
+          >
+            {m}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 interface AITerminalProps {
   tab: FileTab;
@@ -167,6 +203,7 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
   const inited       = useRef(false);
   const atBottomRef  = useRef(true);
   const resizeTimer  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modeRef      = useRef<Mode>("agent");
 
   const provider = (tab.aiProvider ?? "claude") as AiProvider;
   const info = PROVIDER_INFO[provider];
@@ -177,9 +214,11 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
   const termSettings = useStore((s) => s.settings.terminal);
   const cwd          = useStore((s) => s.workspaceRoot) || ".";
 
-  const [cliPath,    setCliPath]    = useState<string | null>(null);
-  const [findError,  setFindError]  = useState<string | null>(null);
-  const [showSearch, setShowSearch] = useState(false);
+  const [cliPath,     setCliPath]    = useState<string | null>(null);
+  const [findError,   setFindError]  = useState<string | null>(null);
+  const [showSearch,  setShowSearch] = useState(false);
+  const [mode,        setMode]       = useState<Mode>("agent");
+  const [restartKey,  setRestartKey] = useState(0);
 
   // ── Locate CLI binary once ────────────────────────────────────────────────
   useEffect(() => {
@@ -202,12 +241,30 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Switch mode: kill PTY and respawn with new args ──────────────────────
+  const switchMode = useCallback((newMode: Mode) => {
+    if (newMode === modeRef.current) return;
+    modeRef.current = newMode;
+    unlistenRef.current?.();
+    unlistenRef.current = null;
+    invoke("pty_kill", { sessionId }).catch(() => {});
+    inited.current = false;
+    termRef.current?.writeln("\r\n\x1b[90m───────────────────────────────────────────────────\x1b[0m");
+    termRef.current?.writeln(`\x1b[90m  switching to ${newMode} mode…\x1b[0m`);
+    termRef.current?.writeln("\x1b[90m───────────────────────────────────────────────────\x1b[0m\r\n");
+    setMode(newMode);
+    setRestartKey((k) => k + 1);
+  }, [sessionId]);
+
   // ── Init xterm + spawn PTY — fires once when visible & path known ─────────
   useEffect(() => {
     if (inited.current || !cliPath || !visible || !containerRef.current) return;
     inited.current = true;
 
-    const term = new XTerm({
+    // On mode-switch respawn, xterm is already set up — skip re-creation
+    const isRespawn = termRef.current != null;
+
+    const term = isRespawn ? termRef.current! : new XTerm({
       theme:             getTermTheme(themeName),
       fontFamily:        "'JetBrains Mono', 'JetBrainsMono Nerd Font', monospace",
       fontSize:          termSettings.fontSize,
@@ -219,71 +276,73 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
       macOptionIsMeta:   true,
     });
 
-    const fit     = new FitAddon();
-    const links   = new WebLinksAddon();
-    const unicode = new Unicode11Addon();
-    const search  = new SearchAddon();
-    term.loadAddon(fit);
-    term.loadAddon(links);
-    term.loadAddon(search);
+    if (!isRespawn) {
+      const fit     = new FitAddon();
+      const links   = new WebLinksAddon();
+      const unicode = new Unicode11Addon();
+      const search  = new SearchAddon();
+      term.loadAddon(fit);
+      term.loadAddon(links);
+      term.loadAddon(search);
 
-    try {
-      term.open(containerRef.current);
-      // Unicode11 must be activated AFTER open() in xterm v5
-      term.loadAddon(unicode);
-      term.unicode.activeVersion = "11";
-    } catch (e) {
-      console.error("[AITerminal] xterm open failed:", e);
-      // Do NOT reset inited.current — prevents a retry loop on re-render
-      term.dispose();
-      return;
-    }
-    termRef.current   = term;
-    fitRef.current    = fit;
-    searchRef.current = search;
-
-    // ── Keyboard shortcuts ────────────────────────────────────────────────
-    term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== "keydown") return true;
-      const meta = e.metaKey || e.ctrlKey;
-      if (meta && e.key === "c") {
-        const sel = termRef.current?.getSelection();
-        if (sel) { navigator.clipboard.writeText(sel); return false; }
-        return true; // → SIGINT
+      try {
+        term.open(containerRef.current);
+        // Unicode11 must be activated AFTER open() in xterm v5
+        term.loadAddon(unicode);
+        term.unicode.activeVersion = "11";
+      } catch (e) {
+        console.error("[AITerminal] xterm open failed:", e);
+        // Do NOT reset inited.current — prevents a retry loop on re-render
+        term.dispose();
+        return;
       }
-      if (meta && e.key === "k") { term.clear(); return false; }
-      if (meta && e.key === "f") { setShowSearch((v) => !v); return false; }
-      return true;
-    });
+      termRef.current   = term;
+      fitRef.current    = fit;
+      searchRef.current = search;
 
-    // User input → PTY
-    term.onData((data) => invoke("pty_write", { sessionId, data }).catch(() => {}));
+      // ── Keyboard shortcuts ──────────────────────────────────────────────
+      term.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown") return true;
+        const meta = e.metaKey || e.ctrlKey;
+        if (meta && e.key === "c") {
+          const sel = termRef.current?.getSelection();
+          if (sel) { navigator.clipboard.writeText(sel); return false; }
+          return true; // → SIGINT
+        }
+        if (meta && e.key === "k") { term.clear(); return false; }
+        if (meta && e.key === "f") { setShowSearch((v) => !v); return false; }
+        return true;
+      });
 
-    // Track whether we're at the bottom so resize can preserve position
-    term.onScroll(() => {
-      const buf = term.buffer.active;
-      atBottomRef.current = buf.viewportY >= buf.length - term.rows;
-    });
+      // User input → PTY
+      term.onData((data) => invoke("pty_write", { sessionId, data }).catch(() => {}));
 
-    // ResizeObserver → debounced refit (50ms prevents 60fps glitching during drag)
-    const ro = new ResizeObserver(() => {
-      if (resizeTimer.current) clearTimeout(resizeTimer.current);
-      resizeTimer.current = setTimeout(() => {
-        resizeTimer.current = null;
-        requestAnimationFrame(() => {
-          const container = containerRef.current;
-          if (!fitRef.current || !termRef.current || !container) return;
-          if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
-          const wasAtBottom = atBottomRef.current;
-          fitRef.current.fit();
-          if (wasAtBottom) termRef.current.scrollToBottom();
-          const { rows, cols } = termRef.current;
-          invoke("pty_resize", { sessionId, rows, cols }).catch(() => {});
-        });
-      }, 50);
-    });
-    ro.observe(containerRef.current);
-    roRef.current = ro;
+      // Track whether we're at the bottom so resize can preserve position
+      term.onScroll(() => {
+        const buf = term.buffer.active;
+        atBottomRef.current = buf.viewportY >= buf.length - term.rows;
+      });
+
+      // ResizeObserver → debounced refit (50ms prevents 60fps glitching during drag)
+      const ro = new ResizeObserver(() => {
+        if (resizeTimer.current) clearTimeout(resizeTimer.current);
+        resizeTimer.current = setTimeout(() => {
+          resizeTimer.current = null;
+          requestAnimationFrame(() => {
+            const container = containerRef.current;
+            if (!fitRef.current || !termRef.current || !container) return;
+            if (container.offsetWidth === 0 || container.offsetHeight === 0) return;
+            const wasAtBottom = atBottomRef.current;
+            fitRef.current.fit();
+            if (wasAtBottom) termRef.current.scrollToBottom();
+            const { rows, cols } = termRef.current;
+            invoke("pty_resize", { sessionId, rows, cols }).catch(() => {});
+          });
+        }, 50);
+      });
+      ro.observe(containerRef.current);
+      roRef.current = ro;
+    }
 
     // PTY output → xterm
     let listenCancelled = false;
@@ -295,6 +354,9 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
     });
 
     // Fit then spawn
+    const spawnArgs = provider === "claude" && modeRef.current === "chat"
+      ? ["--allowedTools", "Read,WebSearch", "--model", "claude-haiku-4-5-20251001", "--effort", "low"]
+      : null;
     let spawnCancelled = false;
     const doSpawn = () => {
       if (spawnCancelled || !fitRef.current || !termRef.current) return;
@@ -312,6 +374,7 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
         rows,
         cols,
         shell: cliPath,
+        args: spawnArgs,
       }).catch((err) => {
         termRef.current?.writeln(`\x1b[31mFailed to start ${info.label}: ${err}\x1b[0m`);
       });
@@ -320,7 +383,7 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
 
     return () => { spawnCancelled = true; listenCancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cliPath, visible]);
+  }, [cliPath, visible, restartKey]);
 
   // ── Refit + focus on visibility change ───────────────────────────────────
   useEffect(() => {
@@ -379,6 +442,23 @@ export function AITerminal({ tab, visible }: AITerminalProps) {
       backdropFilter:       "blur(20px) saturate(1.4)",
       WebkitBackdropFilter: "blur(20px) saturate(1.4)",
     }}>
+      {/* Header — Claude-only, shows mode toggle */}
+      {provider === "claude" && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "6px 12px",
+          borderBottom: "1px solid rgb(var(--c-border) / 0.5)",
+          flexShrink: 0,
+        }}>
+          <AnthropicLogo size={13} style={{ color: "#D97757" }} />
+          <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: "rgb(var(--c-fg))" }}>
+            Claude
+          </span>
+          <div style={{ flex: 1 }} />
+          <ModeToggle mode={mode} onChange={switchMode} />
+        </div>
+      )}
+
       {/* Terminal area fills remaining space */}
       <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
 

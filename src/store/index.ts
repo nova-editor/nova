@@ -35,7 +35,6 @@ export interface Settings {
   spotifyTransparent: boolean; // glass spotify player (shows wallpaper through)
   autosaveDelay:  number;
   sidebarWidth:   number;
-  claudeApiKey:   string;
 }
 
 export const DEFAULT_BACKGROUND = {
@@ -69,7 +68,6 @@ export const DEFAULT_SETTINGS: Settings = {
   spotifyTransparent: false,
   autosaveDelay: 500,
   sidebarWidth:  240,
-  claudeApiKey:  "",
 };
 
 function loadSettings(): Settings {
@@ -99,7 +97,7 @@ export interface FileTab {
   name:        string;
   dirty:       boolean;
   language:    string;
-  kind?:       "file" | "ai" | "ai-launcher" | "claude-api";
+  kind?:       "file" | "ai" | "ai-launcher" | "pinned-terminal";
   aiProvider?: AiProvider;
 }
 
@@ -153,7 +151,7 @@ interface AppState {
   openFile:          (path: string) => Promise<void>;
   openAiTab:         (provider: AiProvider) => void;
   openAiLauncher:    () => void;
-  openClaudeApiTab:  () => void;
+  openPinnedTerminal:   () => void;
   replaceTabWithAi:  (tabPath: string, provider: AiProvider) => void;
   closeTab:    (idx: number, pane: "left" | "right") => void;
   setActiveTab:   (idx: number, pane: "left" | "right") => void;
@@ -218,7 +216,6 @@ interface AppState {
     spotifyTransparent?: boolean;
     autosaveDelay?:      number;
     sidebarWidth?:       number;
-    claudeApiKey?:       string;
   }) => void;
   showSettings:   boolean;
   toggleSettings: () => void;
@@ -401,15 +398,15 @@ export const useStore = create<AppState>((set, get) => ({
     });
   },
 
-  openClaudeApiTab: () => {
+  openPinnedTerminal: () => {
     const { leftPane, rightPane, focusedPane } = get();
     const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
     const newTab: FileTab = {
-      path:     `__claude-api__${crypto.randomUUID()}`,
-      name:     "Claude",
+      path:     `__pinned-terminal__${crypto.randomUUID()}`,
+      name:     "Terminal",
       dirty:    false,
       language: "plaintext",
-      kind:     "claude-api",
+      kind:     "pinned-terminal",
     };
     set((s) => {
       if (key === "left") {
@@ -528,7 +525,8 @@ export const useStore = create<AppState>((set, get) => ({
     const { leftPane, rightPane } = get();
     const tab = leftPane.tabs.find((t) => t.path === path)
       ?? rightPane?.tabs.find((t) => t.path === path);
-    if (!tab || !tab.dirty || tab.kind === "ai" || tab.kind === "ai-launcher") return;
+    if (!tab || !tab.dirty || tab.kind === "ai" || tab.kind === "ai-launcher" || tab.kind === "pinned-terminal") return;
+
     const content = tabContentMap.get(tab.path) ?? "";
     try {
       await invoke("write_file", { path: tab.path, content });
