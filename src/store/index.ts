@@ -97,14 +97,15 @@ export interface FileTab {
   name:        string;
   dirty:       boolean;
   language:    string;
-  kind?:       "file" | "ai" | "ai-launcher" | "pinned-terminal";
+  kind?:       "file" | "ai" | "ai-launcher" | "pinned-terminal" | "html-viewer" | "pdf-viewer" | "md-preview" | "notebook-viewer";
   aiProvider?: AiProvider;
 }
 
 /** @deprecated Use AI_TAB_PREFIX + openAiTab instead */
-export const CLAUDE_TAB_PATH   = "__claude__";
-export const AI_TAB_PREFIX     = "__ai__";
-export const AI_LAUNCHER_PATH  = "__ai-launcher__";
+export const CLAUDE_TAB_PATH    = "__claude__";
+export const AI_TAB_PREFIX      = "__ai__";
+export const AI_LAUNCHER_PATH   = "__ai-launcher__";
+export const MD_PREVIEW_PREFIX  = "__md-preview__";
 
 // ── PaneState — each pane has its own independent tab list ───────────────────
 export interface PaneState {
@@ -152,6 +153,11 @@ interface AppState {
   openAiTab:         (provider: AiProvider) => void;
   openAiLauncher:    () => void;
   openPinnedTerminal:   () => void;
+  openHtmlViewer:       () => void;
+  openPdfViewer:        () => void;
+  openMdPreview:        (sourcePath: string) => void;
+  updateMdPreviewContent: (sourcePath: string, content: string) => void;
+  mdPreviewContents:    Record<string, string>;
   replaceTabWithAi:  (tabPath: string, provider: AiProvider) => void;
   closeTab:    (idx: number, pane: "left" | "right") => void;
   setActiveTab:   (idx: number, pane: "left" | "right") => void;
@@ -168,6 +174,10 @@ interface AppState {
   toggleFileTree: () => void;
   toggleTerminal: () => void;
   toggleGitPanel: () => void;
+
+  // ── Zen mode ────────────────────────────────────────────────────────────
+  zenMode:       boolean;
+  toggleZenMode: () => void;
 
   // ── File tree ───────────────────────────────────────────────────────────
   expandedDirs: Set<string>;
@@ -284,8 +294,9 @@ function getFocusedPane(s: Pick<AppState, "focusedPane" | "leftPane" | "rightPan
 
 export const useStore = create<AppState>((set, get) => ({
   // ── Workspace ─────────────────────────────────────────────────────────
-  workspaceRoot: "",
+  workspaceRoot: localStorage.getItem("nova-workspace") ?? "",
   setWorkspaceRoot: (root) => {
+    localStorage.setItem("nova-workspace", root);
     set({
       workspaceRoot: root,
       leftPane:      { tabs: [], activeIdx: 0 },
@@ -297,7 +308,8 @@ export const useStore = create<AppState>((set, get) => ({
     get().refreshGit();
   },
   initCwd: (root) => {
-    set({ workspaceRoot: root });
+    // Only fall back to process cwd if no workspace was saved
+    if (!get().workspaceRoot) set({ workspaceRoot: root });
   },
 
   // ── Two-pane model ────────────────────────────────────────────────────
@@ -329,8 +341,15 @@ export const useStore = create<AppState>((set, get) => ({
       // Always read from disk — external tools (Claude, etc.) may have changed the file
       const content = await invoke<string>("read_file", { path });
       tabContentMap.set(path, content);
-      const name    = path.split("/").pop() ?? path;
-      const newTab: FileTab = { path, name, dirty: false, language: detectLanguage(path) };
+      const name       = path.split("/").pop() ?? path;
+      const isNotebook = name.endsWith(".ipynb");
+      const newTab: FileTab = {
+        path,
+        name,
+        dirty:    false,
+        language: isNotebook ? "json" : detectLanguage(path),
+        ...(isNotebook ? { kind: "notebook-viewer" as const } : {}),
+      };
 
       set((s) => {
         if (key === "left") {
@@ -407,6 +426,100 @@ export const useStore = create<AppState>((set, get) => ({
       dirty:    false,
       language: "plaintext",
       kind:     "pinned-terminal",
+    };
+    set((s) => {
+      if (key === "left") {
+        return { leftPane: { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length }, focusedPane: "left" as const };
+      }
+      if (!s.rightPane) {
+        return { rightPane: { tabs: [newTab], activeIdx: 0 }, focusedPane: "right" as const };
+      }
+      return { rightPane: { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length }, focusedPane: "right" as const };
+    });
+  },
+
+  openHtmlViewer: () => {
+    const { leftPane, rightPane, focusedPane } = get();
+    const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+    const newTab: FileTab = {
+      path:     `__html-viewer__${crypto.randomUUID()}`,
+      name:     "HTML Viewer",
+      dirty:    false,
+      language: "html",
+      kind:     "html-viewer",
+    };
+    set((s) => {
+      if (key === "left") {
+        return { leftPane: { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length }, focusedPane: "left" as const };
+      }
+      if (!s.rightPane) {
+        return { rightPane: { tabs: [newTab], activeIdx: 0 }, focusedPane: "right" as const };
+      }
+      return { rightPane: { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length }, focusedPane: "right" as const };
+    });
+  },
+
+  mdPreviewContents: {},
+
+  openMdPreview: (sourcePath) => {
+    const previewPath = `${MD_PREVIEW_PREFIX}${sourcePath}`;
+    const { leftPane, rightPane, focusedPane } = get();
+    // If already open in any pane, just focus it
+    const leftIdx = leftPane.tabs.findIndex((t) => t.path === previewPath);
+    if (leftIdx >= 0) {
+      set({ leftPane: { ...leftPane, activeIdx: leftIdx }, focusedPane: "left" });
+      return;
+    }
+    if (rightPane) {
+      const rightIdx = rightPane.tabs.findIndex((t) => t.path === previewPath);
+      if (rightIdx >= 0) {
+        set({ rightPane: { ...rightPane, activeIdx: rightIdx }, focusedPane: "right" });
+        return;
+      }
+    }
+    // Seed initial content from the live editor map
+    const initialContent = tabContentMap.get(sourcePath) ?? "";
+    const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+    const newTab: FileTab = {
+      path:     previewPath,
+      name:     "Preview",
+      dirty:    false,
+      language: "markdown",
+      kind:     "md-preview",
+    };
+    set((s) => {
+      const next: Partial<AppState> = {
+        mdPreviewContents: { ...s.mdPreviewContents, [sourcePath]: initialContent },
+      };
+      if (key === "left") {
+        next.leftPane = { tabs: [...s.leftPane.tabs, newTab], activeIdx: s.leftPane.tabs.length };
+        next.focusedPane = "left";
+      } else if (!s.rightPane) {
+        next.rightPane = { tabs: [newTab], activeIdx: 0 };
+        next.focusedPane = "right";
+      } else {
+        next.rightPane = { tabs: [...s.rightPane.tabs, newTab], activeIdx: s.rightPane.tabs.length };
+        next.focusedPane = "right";
+      }
+      return next;
+    });
+  },
+
+  updateMdPreviewContent: (sourcePath, content) => {
+    set((s) => ({
+      mdPreviewContents: { ...s.mdPreviewContents, [sourcePath]: content },
+    }));
+  },
+
+  openPdfViewer: () => {
+    const { leftPane, rightPane, focusedPane } = get();
+    const { key } = getFocusedPane({ focusedPane, leftPane, rightPane });
+    const newTab: FileTab = {
+      path:     `__pdf-viewer__${crypto.randomUUID()}`,
+      name:     "PDF Viewer",
+      dirty:    false,
+      language: "plaintext",
+      kind:     "pdf-viewer",
     };
     set((s) => {
       if (key === "left") {
@@ -590,6 +703,15 @@ export const useStore = create<AppState>((set, get) => ({
   toggleFileTree: () => set((s) => ({ showFileTree: !s.showFileTree })),
   toggleTerminal: () => set((s) => ({ showTerminal: !s.showTerminal })),
   toggleGitPanel: () => set((s) => ({ showGitPanel: !s.showGitPanel })),
+
+  // ── Zen mode ──────────────────────────────────────────────────────────
+  zenMode:       false,
+  toggleZenMode: () => set((s) => {
+    const entering = !s.zenMode;
+    return entering
+      ? { zenMode: true, showFileTree: false, showTerminal: false, showGitPanel: false, showSettings: false, showHelp: false }
+      : { zenMode: false };
+  }),
 
   // ── File tree ─────────────────────────────────────────────────────────
   expandedDirs: new Set(),

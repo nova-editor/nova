@@ -22,7 +22,11 @@ import { HelpPanel }       from "./components/HelpPanel";
 import { AITerminal }      from "./components/AITerminal";
 import { AILauncherPage }  from "./components/AILauncherPage";
 import { PinnedTerminal }  from "./components/PinnedTerminal";
-import { SettingsPanel }   from "./components/Settings";
+import { HtmlViewerTab }  from "./components/HtmlViewerTab";
+import { PdfViewerTab }   from "./components/PdfViewerTab";
+import { MdPreviewTab }        from "./components/MdPreviewTab";
+import { NotebookViewerTab }  from "./components/NotebookViewerTab";
+import { SettingsPanel }      from "./components/Settings";
 import { SpotifyPlayer }   from "./components/SpotifyPlayer";
 
 function TitleBtn({ onClick, title, active, children }: {
@@ -50,6 +54,7 @@ export default function App() {
   const paletteOpen   = useStore((s) => s.paletteOpen);
   const showHelp      = useStore((s) => s.showHelp);
   const workspaceRoot = useStore((s) => s.workspaceRoot);
+  const zenMode       = useStore((s) => s.zenMode);
 
   // Two-pane state
   const leftPane      = useStore((s) => s.leftPane);
@@ -61,6 +66,7 @@ export default function App() {
   const toggleFileTree    = useStore((s) => s.toggleFileTree);
   const toggleTerminal    = useStore((s) => s.toggleTerminal);
   const toggleGitPanel    = useStore((s) => s.toggleGitPanel);
+  const toggleZenMode     = useStore((s) => s.toggleZenMode);
   const setFuzzyOpen      = useStore((s) => s.setFuzzyOpen);
   const setPaletteOpen    = useStore((s) => s.setPaletteOpen);
   const saveTab           = useStore((s) => s.saveTab);
@@ -78,6 +84,9 @@ export default function App() {
   const openPinnedTerminal    = useStore((s) => s.openPinnedTerminal);
 
   const openAiLauncher    = useStore((s) => s.openAiLauncher);
+  const openHtmlViewer    = useStore((s) => s.openHtmlViewer);
+  const openMdPreview     = useStore((s) => s.openMdPreview);
+  const openPdfViewer     = useStore((s) => s.openPdfViewer);
   const splitEditor       = useStore((s) => s.splitEditor);
   const closeSplit        = useStore((s) => s.closeSplit);
   const settings          = useStore((s) => s.settings);
@@ -171,6 +180,9 @@ export default function App() {
       const tag     = (e.target as HTMLElement)?.tagName;
       const inInput = tag === "INPUT" || tag === "TEXTAREA";
 
+      if (ctrl && e.shiftKey && (e.key === "F" || e.key === "f")) {
+        e.preventDefault(); toggleZenMode(); return;
+      }
       if (!fuzzyOpen && !paletteOpen) {
         if (ctrl && e.key === "b") { e.preventDefault(); toggleFileTree();  return; }
         if (ctrl && e.key === "j") { e.preventDefault(); toggleTerminal();  return; }
@@ -181,6 +193,8 @@ export default function App() {
 if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault(); openAiLauncher(); return; }
         if (ctrl && e.shiftKey && (e.key === "M" || e.key === "m")) { e.preventDefault(); toggleSpotify(); return; }
         if (ctrl && e.shiftKey && (e.key === "L" || e.key === "l")) { e.preventDefault(); openPinnedTerminal(); return; }
+        if (ctrl && e.shiftKey && (e.key === "R" || e.key === "r")) { e.preventDefault(); openHtmlViewer(); return; }
+        if (ctrl && e.shiftKey && (e.key === "?" || e.key === "/")) { e.preventDefault(); openPdfViewer();  return; }
         if (ctrl && e.key === "\\") { e.preventDefault(); cyclePreset(); return; }
         if (ctrl && e.key === "n" && !e.shiftKey) { e.preventDefault(); window.dispatchEvent(new CustomEvent("nova:new-file")); return; }
         if (ctrl && e.key === "t") { e.preventDefault(); window.dispatchEvent(new CustomEvent("nova:new-terminal")); return; }
@@ -235,8 +249,8 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [
-    fuzzyOpen, paletteOpen,
-    toggleFileTree, toggleTerminal, toggleGitPanel, toggleSettings, toggleHelp, toggleSpotify, cyclePreset, openAiLauncher, openPinnedTerminal, openFolder,
+    fuzzyOpen, paletteOpen, zenMode,
+    toggleFileTree, toggleTerminal, toggleGitPanel, toggleSettings, toggleHelp, toggleSpotify, toggleZenMode, cyclePreset, openAiLauncher, openPinnedTerminal, openHtmlViewer, openPdfViewer, openFolder,
     setFuzzyOpen, setPaletteOpen,
     settings.editor.fontSize, updateSettings,
   ]);
@@ -245,8 +259,11 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
   const leftActiveTab  = leftPane.tabs[leftPane.activeIdx];
   const rightActiveTab = rightPane?.tabs[rightPane.activeIdx];
 
-  const isMarkdown  = leftActiveTab?.language === "markdown" && leftActiveTab?.kind !== "ai";
-  const [showMdPreview, setShowMdPreview] = useState(false);
+  const isMarkdown      = leftActiveTab?.language === "markdown" && leftActiveTab?.kind !== "ai";
+  const mdPreviewOpen   = isMarkdown && (
+    leftPane.tabs.some((t) => t.path === `__md-preview__${leftActiveTab?.path}`) ||
+    !!rightPane?.tabs.some((t) => t.path === `__md-preview__${leftActiveTab?.path}`)
+  );
 
   // AI active indicator for title bar button
   const aiIsOpen = leftActiveTab?.kind === "ai" || rightActiveTab?.kind === "ai"
@@ -336,7 +353,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
       <div className="relative flex flex-col h-full w-full" style={{ zIndex: 1 }}>
 
       {/* ── Title bar ──────────────────────────────────────────────────────── */}
-      <div className="flex items-center shrink-0 px-2 gap-1 border-b border-editor-border"
+      {!zenMode && <div className="flex items-center shrink-0 px-2 gap-1 border-b border-editor-border"
            style={{ height: 36, background: "rgb(var(--c-header) / var(--surface-alpha, 1))" }}>
 
         <TitleBtn onClick={toggleFileTree} title="Explorer (⌘B)"           active={showFileTree}><Files size={14} /></TitleBtn>
@@ -365,10 +382,10 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
 
         {isMarkdown && (
           <button
-            onClick={() => setShowMdPreview((v) => !v)}
-            title={showMdPreview ? "Hide preview" : "Show preview"}
+            onClick={() => leftActiveTab && openMdPreview(leftActiveTab.path)}
+            title={mdPreviewOpen ? "Preview tab already open" : "Open preview tab"}
             className={`flex items-center gap-1 px-2 h-6 rounded text-2xs font-mono transition-colors
-              ${showMdPreview ? "text-editor-accent bg-editor-accent/10" : "text-editor-comment hover:text-editor-fg hover:bg-white/5"}`}
+              ${mdPreviewOpen ? "text-editor-accent bg-editor-accent/10" : "text-editor-comment hover:text-editor-fg hover:bg-white/5"}`}
           >
             <BookOpen size={12} /><span>preview</span>
           </button>
@@ -376,7 +393,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
 
         <TitleBtn onClick={toggleSettings} title="Settings (⌘,)"          active={showSettings}><SlidersHorizontal size={14} /></TitleBtn>
         <TitleBtn onClick={toggleHelp}     title="Keyboard shortcuts (⌘H)" active={showHelp}><Keyboard size={14} /></TitleBtn>
-      </div>
+      </div>}
 
       {/* ── Main area ──────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden" style={{ position: "relative" }}>
@@ -447,8 +464,8 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
               onClick={() => setFocusedPane("left")}
             >
               {leftActiveTab?.kind === "ai-launcher" && <AILauncherPage tabPath={leftActiveTab.path} />}
-              {leftActiveTab && leftActiveTab.kind !== "ai" && leftActiveTab.kind !== "ai-launcher" && leftActiveTab.kind !== "pinned-terminal" && (
-                <Editor tab={leftActiveTab} showMdPreview={showMdPreview} />
+              {leftActiveTab && leftActiveTab.kind !== "ai" && leftActiveTab.kind !== "ai-launcher" && leftActiveTab.kind !== "pinned-terminal" && leftActiveTab.kind !== "html-viewer" && leftActiveTab.kind !== "pdf-viewer" && leftActiveTab.kind !== "md-preview" && leftActiveTab.kind !== "notebook-viewer" && (
+                <Editor tab={leftActiveTab} />
               )}
               {!leftActiveTab && (
                 workspaceRoot ? (
@@ -495,6 +512,36 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
                   visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
                 />
               ))}
+              {/* HTML viewer tabs — left pane */}
+              {leftPane.tabs.filter((t) => t.kind === "html-viewer").map((t) => (
+                <HtmlViewerTab
+                  key={t.path}
+                  visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
+                />
+              ))}
+              {/* PDF viewer tabs — left pane */}
+              {leftPane.tabs.filter((t) => t.kind === "pdf-viewer").map((t) => (
+                <PdfViewerTab
+                  key={t.path}
+                  visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
+                />
+              ))}
+              {/* Markdown preview tabs — left pane */}
+              {leftPane.tabs.filter((t) => t.kind === "md-preview").map((t) => (
+                <MdPreviewTab
+                  key={t.path}
+                  tab={t}
+                  visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
+                />
+              ))}
+              {/* Notebook viewer tabs — left pane */}
+              {leftPane.tabs.filter((t) => t.kind === "notebook-viewer").map((t) => (
+                <NotebookViewerTab
+                  key={t.path}
+                  tab={t}
+                  visible={leftPane.tabs[leftPane.activeIdx]?.path === t.path}
+                />
+              ))}
             </div>
 
             {/* ── Drag handle ───────────────────────────────────────────── */}
@@ -518,8 +565,8 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
               >
                 {/* Render editor only for non-AI, non-launcher active tabs */}
                 {rightActiveTab?.kind === "ai-launcher" && <AILauncherPage tabPath={rightActiveTab.path} />}
-                {rightActiveTab && rightActiveTab.kind !== "ai" && rightActiveTab.kind !== "ai-launcher" && rightActiveTab.kind !== "pinned-terminal" && (
-                  <Editor tab={rightActiveTab} showMdPreview={false} />
+                {rightActiveTab && rightActiveTab.kind !== "ai" && rightActiveTab.kind !== "ai-launcher" && rightActiveTab.kind !== "pinned-terminal" && rightActiveTab.kind !== "html-viewer" && rightActiveTab.kind !== "pdf-viewer" && rightActiveTab.kind !== "md-preview" && rightActiveTab.kind !== "notebook-viewer" && (
+                  <Editor tab={rightActiveTab} />
                 )}
 
                 {/* AI terminals for right pane */}
@@ -537,6 +584,36 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
                     visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
                   />
                 ))}
+                {/* HTML viewer tabs — right pane */}
+                {rightPane.tabs.filter((t) => t.kind === "html-viewer").map((t) => (
+                  <HtmlViewerTab
+                    key={t.path}
+                    visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
+                  />
+                ))}
+                {/* PDF viewer tabs — right pane */}
+                {rightPane.tabs.filter((t) => t.kind === "pdf-viewer").map((t) => (
+                  <PdfViewerTab
+                    key={t.path}
+                    visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
+                  />
+                ))}
+                {/* Markdown preview tabs — right pane */}
+                {rightPane.tabs.filter((t) => t.kind === "md-preview").map((t) => (
+                  <MdPreviewTab
+                    key={t.path}
+                    tab={t}
+                    visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
+                  />
+                ))}
+                {/* Notebook viewer tabs — right pane */}
+                {rightPane.tabs.filter((t) => t.kind === "notebook-viewer").map((t) => (
+                  <NotebookViewerTab
+                    key={t.path}
+                    tab={t}
+                    visible={rightPane.tabs[rightPane.activeIdx]?.path === t.path}
+                  />
+                ))}
               </div>
             )}
           </div>{/* end editor area */}
@@ -548,7 +625,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
         {showGitPanel && <GitPanel />}
       </div>
 
-      <StatusBar />
+      {!zenMode && <StatusBar />}
 
       {/* Overlays */}
       {fuzzyOpen   && <FuzzyFinder />}

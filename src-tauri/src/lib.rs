@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{claude, files, git, pty, spotify, updater};
+use commands::{claude, fileserver, files, git, jupyter, pty, spotify, updater};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, EventTarget, Manager};
 use std::sync::Mutex;
@@ -285,6 +285,12 @@ pub fn run() {
             claude::find_codex_path,
             claude::claude_api_chat,
             claude::claude_cli_chat,
+            // HTML file server
+            fileserver::start_html_server,
+            fileserver::stop_html_server,
+            // Jupyter
+            jupyter::start_jupyter_server,
+            jupyter::stop_jupyter_server,
             // Spotify
             spotify::spotify_osascript,
             spotify::spotify_open_url,

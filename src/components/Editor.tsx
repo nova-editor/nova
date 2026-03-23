@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { MarkdownPreview } from "./MarkdownPreview";
 import {
   EditorView, keymap, lineNumbers, highlightActiveLineGutter,
   highlightSpecialChars, drawSelection, dropCursor,
@@ -7,10 +6,10 @@ import {
 } from "@codemirror/view";
 import { EditorState, Extension, Compartment } from "@codemirror/state";
 import {
-  foldGutter, indentOnInput, syntaxHighlighting,
+  foldGutter, syntaxHighlighting,
   defaultHighlightStyle, bracketMatching, foldKeymap, indentUnit,
 } from "@codemirror/language";
-import { history, defaultKeymap, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { history, defaultKeymap, historyKeymap, indentLess, indentMore } from "@codemirror/commands";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { lintKeymap } from "@codemirror/lint";
@@ -81,7 +80,6 @@ const baseExtensions: Extension = [
   drawSelection(),
   dropCursor(),
   EditorState.allowMultipleSelections.of(true),
-  indentOnInput(),
   syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
   rectangularSelection(),
   crosshairCursor(),
@@ -93,18 +91,38 @@ const baseExtensions: Extension = [
     ...searchKeymap,
     ...historyKeymap,
     ...foldKeymap,
-    ...completionKeymap,
+    // Remove Tab from completionKeymap — accept completions with Enter, not Tab
+    ...completionKeymap.filter((b) => b.key !== "Tab"),
     ...lintKeymap,
-    indentWithTab,
+    // Custom Tab: only use indentMore (start-of-line) for multi-line selections;
+    // single cursor or single-line selection always inserts indent at cursor.
+    {
+      key: "Tab",
+      run: ({ state, dispatch }) => {
+        const multiLine = state.selection.ranges.some((r) => {
+          if (r.empty) return false;
+          return state.doc.lineAt(r.from).number !== state.doc.lineAt(r.to).number;
+        });
+        if (multiLine) {
+          return indentMore({ state, dispatch });
+        }
+        dispatch(state.update(state.replaceSelection(state.facet(indentUnit)), {
+          scrollIntoView: true,
+          userEvent: "input",
+        }));
+        return true;
+      },
+      shift: indentLess,
+    },
   ]),
 ];
 
 interface EditorProps {
   tab:            FileTab;
-  showMdPreview?: boolean;
+  showMdPreview?: boolean; // kept for API compat, no longer used
 }
 
-export function Editor({ tab, showMdPreview = true }: EditorProps) {
+export function Editor({ tab }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef      = useRef<EditorView | null>(null);
 
@@ -125,15 +143,6 @@ export function Editor({ tab, showMdPreview = true }: EditorProps) {
   useEffect(() => { tabPathRef.current    = tab.path;     }, [tab.path]);
   useEffect(() => { tabLangRef.current    = tab.language; }, [tab.language]);
 
-  // Preview content in local state — only this component re-renders on change
-  const [previewContent, setPreviewContent] = useState<string>("");
-
-  // Reset preview when switching files
-  useEffect(() => {
-    if (tab.language === "markdown") {
-      setPreviewContent(tabContentMap.get(tab.path) ?? "");
-    }
-  }, [tab.path, tab.language]);
 
   // ── Create/destroy the view — ONLY when switching files ──────────────────
   // Settings changes are handled by compartment reconfigure effects below.
@@ -188,8 +197,9 @@ export function Editor({ tab, showMdPreview = true }: EditorProps) {
             // Write to tabContentMap synchronously — always current before save fires
             tabContentMap.set(tabPathRef.current, content);
             markDirtyRef.current(tabPathRef.current);
-            // Only update local preview state for markdown files
-            if (tabLangRef.current === "markdown") setPreviewContent(content);
+            // Push content to the standalone preview tab if open
+            if (tabLangRef.current === "markdown")
+              useStore.getState().updateMdPreviewContent(tabPathRef.current, content);
           }),
         ],
       }),
@@ -291,16 +301,14 @@ export function Editor({ tab, showMdPreview = true }: EditorProps) {
     const current = view.state.doc.toString();
     if (current !== stored && !tab.dirty) {
       view.dispatch({ changes: { from: 0, to: current.length, insert: stored } });
-      if (tab.language === "markdown") setPreviewContent(stored);
+      if (tab.language === "markdown")
+        useStore.getState().updateMdPreviewContent(tab.path, stored);
     }
   }, [tab.path, tab.dirty]);
 
-  const splitView = tab.language === "markdown" && showMdPreview;
-
   return (
     <div className="flex w-full h-full overflow-hidden">
-      <div ref={containerRef} className={splitView ? "w-1/2 h-full" : "w-full h-full"} />
-      {splitView && <MarkdownPreview content={previewContent} />}
+      <div ref={containerRef} className="w-full h-full" />
     </div>
   );
 }
