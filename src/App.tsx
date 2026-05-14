@@ -36,6 +36,7 @@ function TitleBtn({ onClick, title, active, children }: {
     <button
       onClick={onClick}
       title={title}
+       aria-label={title}
       className={`flex items-center justify-center w-7 h-7 rounded transition-colors
         ${active
           ? "text-editor-fg"
