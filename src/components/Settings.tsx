@@ -464,6 +464,19 @@ export function SettingsPanel() {
           <div>
             <SectionLabel>Terminal</SectionLabel>
             <div className="rounded-lg overflow-hidden border border-editor-border/30">
+              <Row label="Default Shell">
+                <Select
+                  value={settings.terminal.defaultShell || "system"}
+                  options={[
+                    { label: "System Default", value: "system" },
+                    { label: "Zsh (/bin/zsh)", value: "zsh" },
+                    { label: "Bash (/bin/bash)", value: "bash" },
+                    { label: "PowerShell",     value: "powershell" },
+                    { label: "Command Prompt", value: "cmd" },
+                  ]}
+                  onChange={(v) => t({ defaultShell: v })}
+                />
+              </Row>
               <Row label="Font size">
                 <NumberInput value={settings.terminal.fontSize} min={10} max={20} suffix="px"
                   onChange={(v) => t({ fontSize: v })} />
@@ -472,7 +485,7 @@ export function SettingsPanel() {
                 <NumberInput value={settings.terminal.lineHeight} min={1.0} max={2.0} step={0.1}
                   onChange={(v) => t({ lineHeight: parseFloat(v.toFixed(1)) })} />
               </Row>
-              <div className="flex items-center justify-between gap-4 py-2.5">
+              <div className="flex items-center justify-between gap-4 px-3 py-2.5">
                 <span className="text-xs text-editor-comment">Scrollback</span>
                 <Select
                   value={settings.terminal.scrollback}

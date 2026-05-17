@@ -23,6 +23,7 @@ export interface Settings {
     fontSize:   number;
     lineHeight: number;
     scrollback: number;
+    defaultShell: string;
   };
   background: {
     imagePath: string;   // absolute path; empty = none
@@ -62,6 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
     fontSize:   13,
     lineHeight: 1.2,
     scrollback: 5000,
+    defaultShell: "system"
   },
   background: { ...DEFAULT_BACKGROUND },
   fullDark:           false,
