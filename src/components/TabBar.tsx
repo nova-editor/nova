@@ -36,6 +36,8 @@ export function TabBar({ tabs, activeIdx, onSetActive, onClose }: TabBarProps) {
             key={`${tab.path}-${i}`}
             onClick={() => onSetActive(i)}
             onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); onClose(i); } }}
+              role="button"
+               aria-label={`Open ${tab.name}`}
             className="group/tab relative flex items-center gap-1.5 cursor-pointer select-none shrink-0 transition-colors"
             style={{
               height:       active ? 28 : 25,
