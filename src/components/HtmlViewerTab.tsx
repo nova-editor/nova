@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { open }   from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderOpen, Globe, RefreshCw, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { FolderOpen, Globe, RefreshCw, PanelLeftClose, PanelLeftOpen, AlertTriangle } from "lucide-react";
 import { FileEntry } from "../store";
 
 interface HtmlFile {
@@ -62,6 +62,7 @@ export function HtmlViewerTab({ visible }: Props) {
   const [picking,     setPicking]     = useState(false);
   const [serverPort,  setServerPort]  = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [error,       setError]       = useState<string | null>(null);
 
   // Tracks the active scan so we can cancel it when a new folder is picked
   const scanSignal = useRef<{ cancelled: boolean }>({ cancelled: false });
@@ -96,6 +97,7 @@ export function HtmlViewerTab({ visible }: Props) {
   const pickFolder = useCallback(async () => {
     if (picking || scanning) return; // guard concurrent picks
     setPicking(true);
+    setError(null);
     try {
       const selected = await open({ directory: true, multiple: false });
       if (typeof selected !== "string") return;
@@ -132,7 +134,11 @@ export function HtmlViewerTab({ visible }: Props) {
       setServerPort(port);
       setHtmlFiles(files);
       setActiveFile(pickInitial(files));
-    } catch { /* dialog cancelled or error */ } finally {
+    } catch (err) {
+      // Dialog cancellations surface as empty/null — only show real errors
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg) setError(msg);
+    } finally {
       setScanning(false);
       setPicking(false);
     }
@@ -396,8 +402,92 @@ export function HtmlViewerTab({ visible }: Props) {
               position:      "relative",
             }}
           >
+            {/* Loading overlay while scanning + starting server */}
+            {scanning && (
+              <div
+                style={{
+                  position:       "absolute",
+                  inset:          0,
+                  display:        "flex",
+                  flexDirection:  "column",
+                  alignItems:     "center",
+                  justifyContent: "center",
+                  gap:            10,
+                  fontSize:       12,
+                  fontFamily:     "'JetBrains Mono', monospace",
+                  color:          "rgb(var(--c-gutter))",
+                  zIndex:         1,
+                  pointerEvents:  "none",
+                }}
+              >
+                <RefreshCw size={20} className="animate-spin" style={{ color: "rgb(var(--c-accent))" }} />
+                Starting preview server…
+              </div>
+            )}
+
+            {/* Error state */}
+            {error && !scanning && (
+              <div
+                style={{
+                  position:       "absolute",
+                  inset:          0,
+                  display:        "flex",
+                  flexDirection:  "column",
+                  alignItems:     "center",
+                  justifyContent: "center",
+                  gap:            12,
+                  fontSize:       12,
+                  fontFamily:     "'JetBrains Mono', monospace",
+                  zIndex:         1,
+                  padding:        24,
+                  textAlign:      "center",
+                }}
+              >
+                <AlertTriangle size={28} style={{ color: "rgb(var(--c-red, 239 68 68))" }} />
+                <span style={{ color: "rgb(var(--c-fg))", fontWeight: 500 }}>Preview failed</span>
+                <span
+                  style={{
+                    color:      "rgb(var(--c-comment))",
+                    fontSize:   11,
+                    maxWidth:   360,
+                    lineHeight: "1.5",
+                    wordBreak:  "break-word",
+                  }}
+                >
+                  {error}
+                </span>
+                <button
+                  onClick={pickFolder}
+                  style={{
+                    display:      "flex",
+                    alignItems:   "center",
+                    gap:          6,
+                    marginTop:    4,
+                    padding:      "6px 14px",
+                    borderRadius: 5,
+                    border:       "1px solid rgb(var(--c-accent) / 0.35)",
+                    background:   "rgb(var(--c-accent) / 0.12)",
+                    color:        "rgb(var(--c-accent))",
+                    fontSize:     11,
+                    fontFamily:   "'JetBrains Mono', monospace",
+                    cursor:       "pointer",
+                    transition:   "background 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLElement).style.background = "rgb(var(--c-accent) / 0.22)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.background = "rgb(var(--c-accent) / 0.12)";
+                  }}
+                >
+                  <RefreshCw size={11} />
+                  Retry
+                </button>
+              </div>
+            )}
+
             {/* Placeholder shown while no file is selected yet */}
-            {!iframeSrc && (
+            {!iframeSrc && !scanning && !error && (
               <div
                 style={{
                   position:       "absolute",
