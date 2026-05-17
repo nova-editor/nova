@@ -37,11 +37,23 @@ Download the latest release from the [releases page](https://nova-code-editor.ve
 | Windows  | `_x64-setup.exe` (NSIS installer) |
 | Linux    | `.AppImage` or `.deb` |
 
-**macOS note:** the binary is not notarized. On first launch, run:
+### macOS First Launch Warning
+
+The macOS build is currently unsigned and not notarized, so Gatekeeper may block the app on first launch.
+
+If Nova does not open:
+
+1. Move `nova.app` to the `/Applications` folder
+2. Open Terminal
+3. Run:
 
 ```sh
 xattr -cr /Applications/nova.app
 ```
+
+4. Launch Nova again
+
+This removes the quarantine attributes added by macOS Gatekeeper.
 
 **Windows note:** SmartScreen may warn about an unsigned binary. Click *More info → Run anyway*.
 
