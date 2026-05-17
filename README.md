@@ -48,7 +48,7 @@ If Nova does not open:
 3. Run:
 
 ```sh
-xattr -cr /Applications/nova.app
+xattr -dr com.apple.quarantine /Applications/nova.app
 ```
 
 4. Launch Nova again
