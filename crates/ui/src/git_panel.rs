@@ -89,7 +89,7 @@ impl GitPanel {
 
         if items.is_empty() {
             frame.render_widget(
-                Paragraph::new("  Nothing to commit").style(theme.file_tree_file),
+                Paragraph::new("  "No diff available for untracked, binary, or unchanged files."").style(theme.file_tree_file),
                 list_area,
             );
         } else {
