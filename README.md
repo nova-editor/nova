@@ -156,3 +156,9 @@ The near-term focus is LSP integration, inline git diff gutters, split pane edit
 ## License
 
 MIT
+
+### Type Checking
+
+Run the following command:
+
+npm run typecheck
