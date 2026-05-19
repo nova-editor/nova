@@ -527,6 +527,7 @@ export function Terminal({ visible }: TerminalProps) {
   const updateSettings    = useStore((s) => s.updateSettings);
   const themeName         = useStore((s) => s.settings.editor.theme);
   const setTerminalHeight = useStore((s) => s.setTerminalHeight);
+  const setTerminalState  = useStore((s) => s.setTerminalState);
 
   const [shells,       setShells]       = useState<string[]>([]);
   const [sessions,     setSessions]     = useState<Session[]>([]);
@@ -562,6 +563,11 @@ export function Terminal({ visible }: TerminalProps) {
   // Sync store when maximize toggles (drag syncs on mouseup only — not on every pixel)
   useEffect(() => { setTerminalHeight(panelH); }, [maximized]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Sync state to global store for session persistence
+  useEffect(() => {
+    setTerminalState({ sessions, mainActiveId, splitId, splitFocused });
+  }, [sessions, mainActiveId, splitId, splitFocused, setTerminalState]);
+
   // The session that currently owns keyboard focus (for context menu / clear)
   const focusedSessionId = splitFocused && splitId ? splitId : mainActiveId;
 
@@ -583,10 +589,18 @@ export function Terminal({ visible }: TerminalProps) {
   useEffect(() => {
     if (hasCreatedInitial.current || shells.length === 0 || sessionsRef.current.length > 0 || !visible) return;
     hasCreatedInitial.current = true;
-    const id = crypto.randomUUID();
-    const s: Session = { id, shell: shells[0], label: "", title: "", cwd: "", exitCode: null };
-    setSessions([s]);
-    setMainActiveId(id);
+    const storeSessions = useStore.getState().terminalSessions;
+    if (storeSessions && storeSessions.length > 0) {
+      setSessions(storeSessions);
+      setMainActiveId(useStore.getState().terminalMainActiveId || storeSessions[0].id);
+      setSplitId(useStore.getState().terminalSplitId);
+      setSplitFocused(useStore.getState().terminalSplitFocused);
+    } else {
+      const id = crypto.randomUUID();
+      const s: Session = { id, shell: shells[0], label: "", title: "", cwd: "", exitCode: null };
+      setSessions([s]);
+      setMainActiveId(id);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shells, visible]);
 

@@ -143,6 +143,8 @@ export function Editor({ tab }: EditorProps) {
   useEffect(() => { tabPathRef.current    = tab.path;     }, [tab.path]);
   useEffect(() => { tabLangRef.current    = tab.language; }, [tab.language]);
 
+  const initialCursorOffset = useRef(useStore.getState().cursorPositions[tab.path]);
+
 
   // ── Create/destroy the view — ONLY when switching files ──────────────────
   // Settings changes are handled by compartment reconfigure effects below.
@@ -190,7 +192,7 @@ export function Editor({ tab }: EditorProps) {
             if (update.docChanged || update.selectionSet) {
               const head = update.state.selection.main.head;
               const line = update.state.doc.lineAt(head);
-              useStore.getState().setCursor(line.number, head - line.from + 1);
+              useStore.getState().setCursor(line.number, head - line.from + 1, head, tabPathRef.current);
             }
             if (!update.docChanged) return;
             const content = update.state.doc.toString();
@@ -209,6 +211,14 @@ export function Editor({ tab }: EditorProps) {
     view.dom.dataset.vimMode = "normal";
     viewRef.current = view;
     view.focus();
+
+    if (initialCursorOffset.current !== undefined) {
+      const offset = Math.min(initialCursorOffset.current, view.state.doc.length);
+      view.dispatch({
+        selection: { anchor: offset, head: offset },
+        scrollIntoView: true,
+      });
+    }
 
     // Load language parser without blocking the editor opening
     loadLanguage(tab.language).then((ext) => {
