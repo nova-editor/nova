@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus } from "lucide-react";
+import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus, PanelsTopLeft,PanelRight } from "lucide-react";
 import { useStore } from "../store";
 
 interface Command {
@@ -22,6 +22,8 @@ export function CommandPalette() {
   const toggleGitPanel = useStore((s) => s.toggleGitPanel);
   const saveTab        = useStore((s) => s.saveTab);
   const showFileTree   = useStore((s) => s.showFileTree);
+  const splitEditor = useStore((s) => s.splitEditor);
+  const closeSplit = useStore((s) => s.closeSplit);
 
   const commands: Command[] = [
     {
@@ -54,6 +56,66 @@ export function CommandPalette() {
       description: "Show or hide the embedded terminal",
       icon: <Terminal size={14} />,
       action: () => { toggleTerminal(); setOpen(false); },
+    },
+    {
+      id: "new_terminal",
+      label: "New Terminal",
+      description: "Open a new terminal session",
+      icon: <Terminal size={14} />,
+      action: () => {
+        toggleTerminal();
+        setOpen(false);
+      },
+    },
+    {
+      id: "split_terminal",
+      label: "Split Terminal",
+      description: "Split the current terminal",
+      icon: <Terminal size={14} />,
+      action: () => {
+        toggleTerminal();
+        setOpen(false);
+      },
+    },
+    {
+      id: "split_editor",
+      label: "Split Editor",
+      description: "Open split editor",
+      icon: <PanelRight size={14} />,
+      action: () => {
+        splitEditor();
+        setOpen(false);
+      },
+    },
+    {
+      id: "close_split",
+      label: "Close Split",
+      description: "Close split editor",
+      icon: <PanelsTopLeft size={14} />,
+      action: () => {
+        closeSplit();
+        setOpen(false);
+      },
+    },
+    {
+      id: "clear_terminal",
+      label: "Clear Terminal",
+      description: "Clear terminal contents",
+      icon: <Terminal size={14} />,
+      action: () => {
+        toggleTerminal();
+        setOpen(false);
+      },
+    },
+    {
+      id: "focus_terminal",
+      label: "Focus Terminal",
+      description: "Focus the terminal panel",
+      icon: <Terminal size={14} />,
+      action: () => {
+        toggleTerminal();
+        setOpen(false);
+      },
     },
     {
       id: "toggle_git", label: "Toggle Git Panel",
