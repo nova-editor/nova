@@ -60,6 +60,7 @@ export default function App() {
   const leftPane      = useStore((s) => s.leftPane);
   const rightPane     = useStore((s) => s.rightPane);
   const focusedPane   = useStore((s) => s.focusedPane);
+  const splitRatio    = useStore((s) => s.splitRatio);
 
   const setWorkspaceRoot  = useStore((s) => s.setWorkspaceRoot);
   const initCwd           = useStore((s) => s.initCwd);
@@ -94,6 +95,32 @@ export default function App() {
   const theme             = useStore((s) => s.settings.editor.theme);
   const fullDark          = useStore((s) => s.settings.fullDark);
   const bg                = useStore((s) => s.settings.background);
+  const setSplitRatio     = useStore((s) => s.setSplitRatio);
+  const loadWorkspaceSession = useStore((s) => s.loadWorkspaceSession);
+
+  // Auto-save workspace session on any state change (debounced)
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const unsub = useStore.subscribe((state, prevState) => {
+      // Don't save if workspaceRoot is empty
+      if (!state.workspaceRoot) return;
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        useStore.getState().saveWorkspaceSession();
+      }, 1000);
+    });
+    return () => {
+      unsub();
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  // Load workspace session when workspaceRoot changes
+  useEffect(() => {
+    if (workspaceRoot) {
+      loadWorkspaceSession();
+    }
+  }, [workspaceRoot, loadWorkspaceSession]);
 
   // Apply CSS vars immediately on theme/fullDark change
   useEffect(() => { applyThemeVars(theme, fullDark); }, [theme, fullDark]);
@@ -116,7 +143,14 @@ export default function App() {
     try {
       const selected = await open({ multiple: false, directory: false });
       if (typeof selected === "string") {
-        getCurrentWindow().setFocus().catch(() => {});
+        try {
+          const win = getCurrentWindow();
+          if (win && win.setFocus) {
+            await win.setFocus();
+          }
+        } catch (e) {
+          console.warn("Could not focus window", e);
+        }
         await openFile(selected);
       }
     } catch { /* cancelled */ }
@@ -128,7 +162,14 @@ export default function App() {
       if (typeof selected === "string") {
         setWorkspaceRoot(selected);
         // Reclaim focus after dialog — non-blocking, don't let it block setWorkspaceRoot
-        getCurrentWindow().setFocus().catch(() => {});
+        try {
+          const win = getCurrentWindow();
+          if (win && win.setFocus) {
+            await win.setFocus();
+          }
+        } catch (e) {
+          console.warn("Could not focus window", e);
+        }
       }
     } catch { /* cancelled */ }
   };
@@ -138,9 +179,12 @@ export default function App() {
   // the global listen() receives events emitted to ANY window, so every open window
   // would react to every menu action. Per-window listen scopes it correctly.
   useEffect(() => {
-    const win = getCurrentWindow();
-    const unlistens: Array<() => void> = [];
-    (async () => {
+    try {
+      const win = getCurrentWindow();
+      console.log(win); // Debugging window object as requested
+      if (!win) return;
+      const unlistens: Array<() => void> = [];
+      (async () => {
       unlistens.push(await win.listen("menu://new-file",        () => window.dispatchEvent(new CustomEvent("nova:new-file"))));
       unlistens.push(await win.listen("menu://open-file",       openFileDialog));
       unlistens.push(await win.listen("menu://open-folder",     openFolder));
@@ -164,8 +208,11 @@ export default function App() {
       unlistens.push(await win.listen("menu://go-file",         () => setFuzzyOpen(!useStore.getState().fuzzyOpen)));
       unlistens.push(await win.listen("menu://go-palette",      () => setPaletteOpen(!useStore.getState().paletteOpen)));
       unlistens.push(await win.listen("menu://help-shortcuts",  () => toggleHelp()));
-    })();
-    return () => unlistens.forEach((fn) => fn());
+      })();
+      return () => unlistens.forEach((fn) => fn());
+    } catch (e) {
+      console.error("Error accessing Tauri window:", e);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -270,7 +317,6 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
     || leftActiveTab?.kind === "ai-launcher" || rightActiveTab?.kind === "ai-launcher";
 
   // Split editor drag
-  const [splitRatio,  setSplitRatio]  = useState(0.5);
   const [isSplitDrag, setIsSplitDrag] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
 

@@ -140,6 +140,32 @@ interface GitState {
   branches: GitBranchInfo[];
 }
 
+export interface TerminalSession {
+  id:       string;
+  shell:    string;
+  label:    string;
+  title:    string;
+  cwd:      string;
+  exitCode: number | null;
+}
+
+export interface WorkspaceSession {
+  leftPane:     PaneState;
+  rightPane:    PaneState | null;
+  focusedPane:  "left" | "right";
+  splitRatio:   number;
+  showFileTree: boolean;
+  showTerminal: boolean;
+  showGitPanel: boolean;
+  gitPanelWidth: number;
+  terminalHeight: number;
+  cursorPositions: Record<string, number>;
+  terminalSessions: TerminalSession[];
+  terminalMainActiveId: string;
+  terminalSplitId: string | null;
+  terminalSplitFocused: boolean;
+}
+
 interface AppState {
   // ── Workspace ───────────────────────────────────────────────────────────
   workspaceRoot:    string;
@@ -150,6 +176,8 @@ interface AppState {
   leftPane:     PaneState;
   rightPane:    PaneState | null;
   focusedPane:  "left" | "right";
+  splitRatio:   number;
+  setSplitRatio: (ratio: number) => void;
 
   openFile:          (path: string) => Promise<void>;
   openAiTab:         (provider: AiProvider) => void;
@@ -255,8 +283,17 @@ interface AppState {
   // ── Cursor position (for status bar LOC) ─────────────────────────────────
   cursorLine: number;
   cursorCol:  number;
-  setCursor:  (line: number, col: number) => void;
+  setCursor:  (line: number, col: number, head?: number, path?: string) => void;
 
+  // ── Workspace Session Persistence ───────────────────────────────────────
+  cursorPositions: Record<string, number>;
+  terminalSessions: TerminalSession[];
+  terminalMainActiveId: string;
+  terminalSplitId: string | null;
+  terminalSplitFocused: boolean;
+  setTerminalState: (state: { sessions: TerminalSession[], mainActiveId: string, splitId: string | null, splitFocused: boolean }) => void;
+  saveWorkspaceSession: () => void;
+  loadWorkspaceSession: () => void;
 }
 
 function detectLanguage(path: string): string {
@@ -318,7 +355,9 @@ export const useStore = create<AppState>((set, get) => ({
   leftPane:    { tabs: [], activeIdx: 0 },
   rightPane:   null,
   focusedPane: "left",
+  splitRatio:  0.5,
 
+  setSplitRatio: (ratio) => set({ splitRatio: ratio }),
   setFocusedPane: (pane) => set({ focusedPane: pane }),
 
   setActiveTab: (idx, pane) => set((s) => {
@@ -858,7 +897,90 @@ export const useStore = create<AppState>((set, get) => ({
   // ── Cursor position ───────────────────────────────────────────────────
   cursorLine: 1,
   cursorCol:  1,
-  setCursor:  (line, col) => set({ cursorLine: line, cursorCol: col }),
+  setCursor:  (line, col, head, path) => set((s) => {
+    if (head !== undefined && path) {
+      const nextPos = { ...s.cursorPositions, [path]: head };
+      return { cursorLine: line, cursorCol: col, cursorPositions: nextPos };
+    }
+    return { cursorLine: line, cursorCol: col };
+  }),
+
+  // ── Workspace Session Persistence ───────────────────────────────────────
+  cursorPositions: {},
+  terminalSessions: [],
+  terminalMainActiveId: "",
+  terminalSplitId: null,
+  terminalSplitFocused: false,
+
+  setTerminalState: (state) => set({
+    terminalSessions: state.sessions,
+    terminalMainActiveId: state.mainActiveId,
+    terminalSplitId: state.splitId,
+    terminalSplitFocused: state.splitFocused
+  }),
+
+  saveWorkspaceSession: () => {
+    const s = get();
+    if (!s.workspaceRoot) return;
+    const session: WorkspaceSession = {
+      leftPane: s.leftPane,
+      rightPane: s.rightPane,
+      focusedPane: s.focusedPane,
+      splitRatio: s.splitRatio,
+      showFileTree: s.showFileTree,
+      showTerminal: s.showTerminal,
+      showGitPanel: s.showGitPanel,
+      gitPanelWidth: s.gitPanelWidth,
+      terminalHeight: s.terminalHeight,
+      cursorPositions: s.cursorPositions,
+      terminalSessions: s.terminalSessions,
+      terminalMainActiveId: s.terminalMainActiveId,
+      terminalSplitId: s.terminalSplitId,
+      terminalSplitFocused: s.terminalSplitFocused,
+    };
+    localStorage.setItem(`nova-session-${s.workspaceRoot}`, JSON.stringify(session));
+  },
+
+  loadWorkspaceSession: () => {
+    const s = get();
+    if (!s.workspaceRoot) return;
+    try {
+      const raw = localStorage.getItem(`nova-session-${s.workspaceRoot}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as WorkspaceSession;
+        set({
+          leftPane: parsed.leftPane ?? { tabs: [], activeIdx: 0 },
+          rightPane: parsed.rightPane ?? null,
+          focusedPane: parsed.focusedPane ?? "left",
+          splitRatio: parsed.splitRatio ?? 0.5,
+          showFileTree: parsed.showFileTree ?? true,
+          showTerminal: parsed.showTerminal ?? false,
+          showGitPanel: parsed.showGitPanel ?? false,
+          gitPanelWidth: parsed.gitPanelWidth ?? 280,
+          terminalHeight: parsed.terminalHeight ?? 260,
+          cursorPositions: parsed.cursorPositions ?? {},
+          terminalSessions: parsed.terminalSessions ?? [],
+          terminalMainActiveId: parsed.terminalMainActiveId ?? "",
+          terminalSplitId: parsed.terminalSplitId ?? null,
+          terminalSplitFocused: parsed.terminalSplitFocused ?? false,
+        });
+        
+        // Ensure files are reloaded into memory since `tabContentMap` is cleared on restart.
+        const allTabs = [
+          ...(parsed.leftPane?.tabs ?? []),
+          ...(parsed.rightPane?.tabs ?? [])
+        ];
+        allTabs.forEach(async (tab) => {
+          if (tab.kind !== "ai" && tab.kind !== "ai-launcher" && tab.kind !== "pinned-terminal" && tab.kind !== "html-viewer" && tab.kind !== "pdf-viewer") {
+            try {
+              const content = await invoke<string>("read_file", { path: tab.path });
+              tabContentMap.set(tab.path, content);
+            } catch { /* file deleted */ }
+          }
+        });
+      }
+    } catch { /* error parsing session */ }
+  },
 
   // ── Presets ───────────────────────────────────────────────────────────
   presets: (() => {
