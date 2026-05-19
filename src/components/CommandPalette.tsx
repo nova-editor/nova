@@ -118,46 +118,6 @@ export function CommandPalette() {
       },
     },
     {
-      id: "new_terminal",
-      label: "New Terminal",
-      description: "Open a new terminal session",
-      icon: <Terminal size={14} />,
-      action: () => {
-        toggleTerminal();
-        setOpen(false);
-      },
-    },
-    {
-      id: "split_terminal",
-      label: "Split Terminal",
-      description: "Split the current terminal",
-      icon: <Terminal size={14} />,
-      action: () => {
-        toggleTerminal();
-        setOpen(false);
-      },
-    },
-    {
-      id: "clear_terminal",
-      label: "Clear Terminal",
-      description: "Clear terminal contents",
-      icon: <Terminal size={14} />,
-      action: () => {
-        toggleTerminal();
-        setOpen(false);
-      },
-    },
-    {
-      id: "focus_terminal",
-      label: "Focus Terminal",
-      description: "Focus the terminal panel",
-      icon: <Terminal size={14} />,
-      action: () => {
-        toggleTerminal();
-        setOpen(false);
-      },
-    },
-    {
       id: "toggle_git", label: "Toggle Git Panel",
       description: "Show or hide the source control panel",
       icon: <GitBranch size={14} />,
