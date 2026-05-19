@@ -61,6 +61,13 @@ const SECTIONS = [
     ],
   },
   {
+    title: "Editor",
+    items: [
+      { key: "Split Editor", desc: "Open split editor" },
+      { key: "Close Split", desc: "Close split editor" },
+    ],
+  },
+  {
     title: "Markdown",
     items: [
       { key: "Preview btn", desc: "Opens independent Preview tab" },

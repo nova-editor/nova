@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus } from "lucide-react";
+import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus, PanelsTopLeft,PanelRight } from "lucide-react";
 import { useStore } from "../store";
 
 interface Command {
@@ -22,6 +22,8 @@ export function CommandPalette() {
   const toggleGitPanel = useStore((s) => s.toggleGitPanel);
   const saveTab        = useStore((s) => s.saveTab);
   const showFileTree   = useStore((s) => s.showFileTree);
+  const splitEditor = useStore((s) => s.splitEditor);
+  const closeSplit = useStore((s) => s.closeSplit);
 
   const commands: Command[] = [
     {
@@ -72,6 +74,26 @@ export function CommandPalette() {
       icon: <Terminal size={14} />,
       action: () => {
         toggleTerminal();
+        setOpen(false);
+      },
+    },
+    {
+      id: "split_editor",
+      label: "Split Editor",
+      description: "Open split editor",
+      icon: <PanelRight size={14} />,
+      action: () => {
+        splitEditor();
+        setOpen(false);
+      },
+    },
+    {
+      id: "close_split",
+      label: "Close Split",
+      description: "Close split editor",
+      icon: <PanelsTopLeft size={14} />,
+      action: () => {
+        closeSplit();
         setOpen(false);
       },
     },
