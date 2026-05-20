@@ -1,3 +1,4 @@
+declare module "*.css";
 declare module "react-file-icon" {
   import { FC } from "react";
 

@@ -427,8 +427,15 @@ function TerminalPane({
         cols,
         shell:     session.shell || null,
       }).catch((err) => {
-        termRef.current?.writeln(`\x1b[31mFailed to start shell: ${err}\x1b[0m`);
-      });
+  const message = err instanceof Error ? err.message : String(err);
+
+  termRef.current?.writeln("");
+  termRef.current?.writeln("\x1b[31mFailed to start terminal shell.\x1b[0m");
+  termRef.current?.writeln(`\x1b[90m${message}\x1b[0m`);
+  termRef.current?.writeln(
+    "\x1b[90mPlease choose another shell or start a new terminal session.\x1b[0m"
+  );
+});
     };
     requestAnimationFrame(doSpawn);
 
