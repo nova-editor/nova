@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{claude, fileserver, files, git, jupyter, pty, spotify, updater};
+use commands::{claude, fileserver, files, git, jupyter, lsp_monitor, pty, spotify, updater};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, EventTarget, Manager};
 use std::sync::Mutex;
@@ -66,6 +66,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(pty::PtyState::new())
+        .manage(lsp_monitor::LspMonitorState::new())
         .manage(updater::PendingUpdate::new())
         .manage(FocusState::new("main"))
         .manage({
@@ -279,6 +280,15 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            // LSP monitor
+            lsp_monitor::lsp_ensure_server,
+            lsp_monitor::lsp_servers,
+            lsp_monitor::lsp_logs,
+            lsp_monitor::lsp_clear_logs,
+            lsp_monitor::lsp_report_diagnostics,
+            lsp_monitor::lsp_restart_server,
+            lsp_monitor::lsp_kill_server,
+            lsp_monitor::lsp_restart_all,
             // Claude / AI providers
             claude::find_claude_path,
             claude::find_gemini_path,

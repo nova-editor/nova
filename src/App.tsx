@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   FolderOpen, FilePlus, BookOpen, SlidersHorizontal,
   GitMerge, Terminal as TerminalIcon, Files, Keyboard,
-  SplitSquareHorizontal, X, Bot,
+  SplitSquareHorizontal, X, Bot, ServerCog,
 } from "lucide-react";
 import { useStore } from "./store";
 import { applyThemeVars } from "./theme/themes";
@@ -28,6 +28,7 @@ import { MdPreviewTab }        from "./components/MdPreviewTab";
 import { NotebookViewerTab }  from "./components/NotebookViewerTab";
 import { SettingsPanel }      from "./components/Settings";
 import { SpotifyPlayer }   from "./components/SpotifyPlayer";
+import { LSPDashboardPanel } from "./components/LSPDashboardPanel";
 
 function TitleBtn({ onClick, title, active, children }: {
   onClick: () => void; title: string; active?: boolean; children: React.ReactNode;
@@ -60,6 +61,7 @@ export default function App() {
   const leftPane      = useStore((s) => s.leftPane);
   const rightPane     = useStore((s) => s.rightPane);
   const focusedPane   = useStore((s) => s.focusedPane);
+  const splitRatio    = useStore((s) => s.splitRatio);
 
   const setWorkspaceRoot  = useStore((s) => s.setWorkspaceRoot);
   const initCwd           = useStore((s) => s.initCwd);
@@ -79,6 +81,8 @@ export default function App() {
   const toggleSettings    = useStore((s) => s.toggleSettings);
   const showSpotify       = useStore((s) => s.showSpotify);
   const toggleSpotify     = useStore((s) => s.toggleSpotify);
+  const showLspDashboard  = useStore((s) => s.showLspDashboard);
+  const toggleLspDashboard = useStore((s) => s.toggleLspDashboard);
   const cyclePreset       = useStore((s) => s.cyclePreset);
   const openAiTab             = useStore((s) => s.openAiTab);
   const openPinnedTerminal    = useStore((s) => s.openPinnedTerminal);
@@ -94,6 +98,61 @@ export default function App() {
   const theme             = useStore((s) => s.settings.editor.theme);
   const fullDark          = useStore((s) => s.settings.fullDark);
   const bg                = useStore((s) => s.settings.background);
+  const setSplitRatio     = useStore((s) => s.setSplitRatio);
+  const loadWorkspaceSession = useStore((s) => s.loadWorkspaceSession);
+  const restoreLastWorkspace = useStore((s) => s.restoreLastWorkspace);
+  const restoreWorkspace     = useStore((s) => s.restoreWorkspace);
+  const recentWorkspaces     = useStore((s) => s.recentWorkspaces);
+
+  // Auto-save workspace session on any state change (debounced)
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+    const unsub = useStore.subscribe((state, prevState) => {
+      // Don't save if workspaceRoot is empty
+      clearTimeout(timeout);
+      if (!state.workspaceRoot || state.isRestoringSession) return;
+      timeout = setTimeout(() => {
+        useStore.getState().saveWorkspaceSession();
+      }, 1000);
+    });
+    return () => {
+      unsub();
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  // Load workspace session when workspaceRoot changes
+  useEffect(() => {
+    if (workspaceRoot) {
+      loadWorkspaceSession();
+    }
+  }, [workspaceRoot, loadWorkspaceSession]);
+
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    const tabs = [...leftPane.tabs, ...(rightPane?.tabs ?? [])]
+      .filter((tab) => (!tab.kind || tab.kind === "file" || tab.kind === "notebook-viewer") && tab.language !== "plaintext");
+    const languages = Array.from(new Set(tabs.map((tab) => tab.language)));
+    if (languages.length === 0) return;
+    const timer = window.setTimeout(() => {
+      languages.forEach((language) => {
+        const startedAt = performance.now();
+        invoke("lsp_ensure_server", { workspaceRoot, language })
+          .then(() => invoke("lsp_report_diagnostics", {
+            report: {
+              workspaceRoot,
+              language,
+              errorCount: 0,
+              warningCount: 0,
+              infoCount: 0,
+              responseLatencyMs: Math.round(performance.now() - startedAt),
+            },
+          }))
+          .catch(() => {});
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [workspaceRoot, leftPane.tabs, rightPane?.tabs]);
 
   // Apply CSS vars immediately on theme/fullDark change
   useEffect(() => { applyThemeVars(theme, fullDark); }, [theme, fullDark]);
@@ -108,15 +167,22 @@ export default function App() {
   // Open folder passed as CLI argument: `nova /path/to/folder`
   useEffect(() => {
     invoke<string | null>("get_startup_path")
-      .then((path) => { if (path) setWorkspaceRoot(path); })
+      .then((path) => { if (path) setWorkspaceRoot(path); else restoreLastWorkspace(); })
       .catch(() => {});
-  }, [setWorkspaceRoot]);
+  }, [setWorkspaceRoot, restoreLastWorkspace]);
 
   const openFileDialog = async () => {
     try {
       const selected = await open({ multiple: false, directory: false });
       if (typeof selected === "string") {
-        getCurrentWindow().setFocus().catch(() => {});
+        try {
+          const win = getCurrentWindow();
+          if (win && win.setFocus) {
+            await win.setFocus();
+          }
+        } catch (e) {
+          console.warn("Could not focus window", e);
+        }
         await openFile(selected);
       }
     } catch { /* cancelled */ }
@@ -128,7 +194,14 @@ export default function App() {
       if (typeof selected === "string") {
         setWorkspaceRoot(selected);
         // Reclaim focus after dialog — non-blocking, don't let it block setWorkspaceRoot
-        getCurrentWindow().setFocus().catch(() => {});
+        try {
+          const win = getCurrentWindow();
+          if (win && win.setFocus) {
+            await win.setFocus();
+          }
+        } catch (e) {
+          console.warn("Could not focus window", e);
+        }
       }
     } catch { /* cancelled */ }
   };
@@ -138,9 +211,12 @@ export default function App() {
   // the global listen() receives events emitted to ANY window, so every open window
   // would react to every menu action. Per-window listen scopes it correctly.
   useEffect(() => {
-    const win = getCurrentWindow();
-    const unlistens: Array<() => void> = [];
-    (async () => {
+    try {
+      const win = getCurrentWindow();
+      console.log(win); // Debugging window object as requested
+      if (!win) return;
+      const unlistens: Array<() => void> = [];
+      (async () => {
       unlistens.push(await win.listen("menu://new-file",        () => window.dispatchEvent(new CustomEvent("nova:new-file"))));
       unlistens.push(await win.listen("menu://open-file",       openFileDialog));
       unlistens.push(await win.listen("menu://open-folder",     openFolder));
@@ -164,8 +240,11 @@ export default function App() {
       unlistens.push(await win.listen("menu://go-file",         () => setFuzzyOpen(!useStore.getState().fuzzyOpen)));
       unlistens.push(await win.listen("menu://go-palette",      () => setPaletteOpen(!useStore.getState().paletteOpen)));
       unlistens.push(await win.listen("menu://help-shortcuts",  () => toggleHelp()));
-    })();
-    return () => unlistens.forEach((fn) => fn());
+      })();
+      return () => unlistens.forEach((fn) => fn());
+    } catch (e) {
+      console.error("Error accessing Tauri window:", e);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -270,7 +349,6 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
     || leftActiveTab?.kind === "ai-launcher" || rightActiveTab?.kind === "ai-launcher";
 
   // Split editor drag
-  const [splitRatio,  setSplitRatio]  = useState(0.5);
   const [isSplitDrag, setIsSplitDrag] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
 
@@ -359,6 +437,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
         <TitleBtn onClick={toggleFileTree} title="Explorer (⌘B)"           active={showFileTree}><Files size={14} /></TitleBtn>
         <TitleBtn onClick={toggleGitPanel} title="Source control (⌘G)"     active={showGitPanel}><GitMerge size={14} /></TitleBtn>
         <TitleBtn onClick={toggleTerminal} title="Terminal (⌘J)"            active={showTerminal}><TerminalIcon size={14} /></TitleBtn>
+        <TitleBtn onClick={toggleLspDashboard} title="LSP Monitor" active={showLspDashboard}><ServerCog size={14} /></TitleBtn>
         <TitleBtn
           onClick={openAiLauncher}
           title="AI Agents (⌘⇧C)"
@@ -478,6 +557,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
                       {([
                         { icon: <FolderOpen size={13} />, label: "Open Folder", kbd: "⌘⇧O", onClick: openFolder },
                         { icon: <FilePlus   size={13} />, label: "Open File",   kbd: "⌘O",   onClick: openFileDialog },
+                        { icon: <BookOpen   size={13} />, label: "Restore Previous Session", kbd: "", onClick: restoreLastWorkspace },
                       ] as const).map(({ icon, label, kbd, onClick }) => (
                         <button
                           key={label}
@@ -489,9 +569,26 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
                         >
                           {icon}
                           <span>{label}</span>
-                          <span style={{ marginLeft: 6, color: "rgb(var(--c-border))", fontSize: 10 }}>{kbd}</span>
+                          {kbd && <span style={{ marginLeft: 6, color: "rgb(var(--c-border))", fontSize: 10 }}>{kbd}</span>}
                         </button>
                       ))}
+                      {recentWorkspaces.length > 0 && (
+                        <div className="mt-5 flex flex-col items-stretch gap-1 min-w-64 max-w-96">
+                          <div className="px-3 text-2xs font-mono uppercase" style={{ color: "rgb(var(--c-comment))" }}>Recent workspaces</div>
+                          {recentWorkspaces.slice(0, 5).map((workspace) => (
+                            <button
+                              key={workspace.path}
+                              onClick={() => restoreWorkspace(workspace.path)}
+                              title={workspace.path}
+                              className="flex flex-col items-start px-3 py-1.5 rounded transition-colors hover:bg-white/5"
+                              style={{ color: "rgb(var(--c-gutter))", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+                            >
+                              <span className="truncate w-full text-left" style={{ color: "rgb(var(--c-fg))" }}>{workspace.name}</span>
+                              <span className="truncate w-full text-left text-2xs">{workspace.path}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -633,6 +730,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
       {showHelp     && <HelpPanel onClose={toggleHelp} />}
       {showSettings && <SettingsPanel />}
       {showSpotify  && <SpotifyPlayer onClose={toggleSpotify} />}
+      {showLspDashboard && <LSPDashboardPanel />}
       </div>
     </div>
   );
