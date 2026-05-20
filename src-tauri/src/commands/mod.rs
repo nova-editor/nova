@@ -3,6 +3,7 @@ pub mod fileserver;
 pub mod files;
 pub mod git;
 pub mod jupyter;
+pub mod lsp_monitor;
 pub mod pty;
 pub mod spotify;
 pub mod updater;

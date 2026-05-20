@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   FolderOpen, FilePlus, BookOpen, SlidersHorizontal,
   GitMerge, Terminal as TerminalIcon, Files, Keyboard,
-  SplitSquareHorizontal, X, Bot,
+  SplitSquareHorizontal, X, Bot, ServerCog,
 } from "lucide-react";
 import { useStore } from "./store";
 import { applyThemeVars } from "./theme/themes";
@@ -28,6 +28,7 @@ import { MdPreviewTab }        from "./components/MdPreviewTab";
 import { NotebookViewerTab }  from "./components/NotebookViewerTab";
 import { SettingsPanel }      from "./components/Settings";
 import { SpotifyPlayer }   from "./components/SpotifyPlayer";
+import { LSPDashboardPanel } from "./components/LSPDashboardPanel";
 
 function TitleBtn({ onClick, title, active, children }: {
   onClick: () => void; title: string; active?: boolean; children: React.ReactNode;
@@ -80,6 +81,8 @@ export default function App() {
   const toggleSettings    = useStore((s) => s.toggleSettings);
   const showSpotify       = useStore((s) => s.showSpotify);
   const toggleSpotify     = useStore((s) => s.toggleSpotify);
+  const showLspDashboard  = useStore((s) => s.showLspDashboard);
+  const toggleLspDashboard = useStore((s) => s.toggleLspDashboard);
   const cyclePreset       = useStore((s) => s.cyclePreset);
   const openAiTab             = useStore((s) => s.openAiTab);
   const openPinnedTerminal    = useStore((s) => s.openPinnedTerminal);
@@ -124,6 +127,32 @@ export default function App() {
       loadWorkspaceSession();
     }
   }, [workspaceRoot, loadWorkspaceSession]);
+
+  useEffect(() => {
+    if (!workspaceRoot) return;
+    const tabs = [...leftPane.tabs, ...(rightPane?.tabs ?? [])]
+      .filter((tab) => (!tab.kind || tab.kind === "file" || tab.kind === "notebook-viewer") && tab.language !== "plaintext");
+    const languages = Array.from(new Set(tabs.map((tab) => tab.language)));
+    if (languages.length === 0) return;
+    const timer = window.setTimeout(() => {
+      languages.forEach((language) => {
+        const startedAt = performance.now();
+        invoke("lsp_ensure_server", { workspaceRoot, language })
+          .then(() => invoke("lsp_report_diagnostics", {
+            report: {
+              workspaceRoot,
+              language,
+              errorCount: 0,
+              warningCount: 0,
+              infoCount: 0,
+              responseLatencyMs: Math.round(performance.now() - startedAt),
+            },
+          }))
+          .catch(() => {});
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [workspaceRoot, leftPane.tabs, rightPane?.tabs]);
 
   // Apply CSS vars immediately on theme/fullDark change
   useEffect(() => { applyThemeVars(theme, fullDark); }, [theme, fullDark]);
@@ -408,6 +437,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
         <TitleBtn onClick={toggleFileTree} title="Explorer (⌘B)"           active={showFileTree}><Files size={14} /></TitleBtn>
         <TitleBtn onClick={toggleGitPanel} title="Source control (⌘G)"     active={showGitPanel}><GitMerge size={14} /></TitleBtn>
         <TitleBtn onClick={toggleTerminal} title="Terminal (⌘J)"            active={showTerminal}><TerminalIcon size={14} /></TitleBtn>
+        <TitleBtn onClick={toggleLspDashboard} title="LSP Monitor" active={showLspDashboard}><ServerCog size={14} /></TitleBtn>
         <TitleBtn
           onClick={openAiLauncher}
           title="AI Agents (⌘⇧C)"
@@ -700,6 +730,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
       {showHelp     && <HelpPanel onClose={toggleHelp} />}
       {showSettings && <SettingsPanel />}
       {showSpotify  && <SpotifyPlayer onClose={toggleSpotify} />}
+      {showLspDashboard && <LSPDashboardPanel />}
       </div>
     </div>
   );

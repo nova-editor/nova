@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus, History } from "lucide-react";
+import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus, History, ServerCog } from "lucide-react";
 import { useStore } from "../store";
 
 interface Command {
@@ -23,6 +23,7 @@ export function CommandPalette() {
   const saveTab        = useStore((s) => s.saveTab);
   const showFileTree   = useStore((s) => s.showFileTree);
   const restoreLastWorkspace = useStore((s) => s.restoreLastWorkspace);
+  const toggleLspDashboard = useStore((s) => s.toggleLspDashboard);
 
   const commands: Command[] = [
     {
@@ -31,6 +32,13 @@ export function CommandPalette() {
       description: "Reopen the last workspace, tabs, layout, and terminal directories",
       icon: <History size={14} />,
       action: () => { restoreLastWorkspace(); setOpen(false); },
+    },
+    {
+      id: "lsp_monitor",
+      label: "LSP Monitor",
+      description: "Inspect language server status, logs, diagnostics, and process controls",
+      icon: <ServerCog size={14} />,
+      action: () => { toggleLspDashboard(); setOpen(false); },
     },
     {
       id: "open_file", label: "Go to File",

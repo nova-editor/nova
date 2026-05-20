@@ -293,6 +293,8 @@ interface AppState {
   // ── Spotify ───────────────────────────────────────────────────────────────
   showSpotify:   boolean;
   toggleSpotify: () => void;
+  showLspDashboard: boolean;
+  toggleLspDashboard: () => void;
 
   // ── Git panel width ────────────────────────────────────────────────────────
   gitPanelWidth:    number;
@@ -978,6 +980,8 @@ export const useStore = create<AppState>((set, get) => ({
   // ── Spotify ───────────────────────────────────────────────────────────
   showSpotify:   false,
   toggleSpotify: () => set((s) => ({ showSpotify: !s.showSpotify })),
+  showLspDashboard: false,
+  toggleLspDashboard: () => set((s) => ({ showLspDashboard: !s.showLspDashboard })),
 
 
   // ── Git panel width ────────────────────────────────────────────────────
