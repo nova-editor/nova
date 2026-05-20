@@ -527,6 +527,7 @@ export function Terminal({ visible }: TerminalProps) {
   const updateSettings    = useStore((s) => s.updateSettings);
   const themeName         = useStore((s) => s.settings.editor.theme);
   const setTerminalHeight = useStore((s) => s.setTerminalHeight);
+  const savedTerminalHeight = useStore((s) => s.terminalHeight);
 
   const [shells,       setShells]       = useState<string[]>([]);
   const [sessions,     setSessions]     = useState<Session[]>([]);
@@ -544,7 +545,7 @@ export function Terminal({ visible }: TerminalProps) {
   splitIdRef.current      = splitId;
   mainActiveIdRef.current = mainActiveId;
   sessionsRef.current     = sessions;
-  const [height,       setHeight]       = useState(260);
+  const [height, setHeight] = useState(savedTerminalHeight);
   const [maximized,    setMaximized]    = useState(false);
   const [isDragging,   setIsDragging]   = useState(false);
   const [renamingId,   setRenamingId]   = useState<string | null>(null);

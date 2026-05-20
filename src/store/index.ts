@@ -852,8 +852,26 @@ export const useStore = create<AppState>((set, get) => ({
   setGitPanelWidth: (w) => set({ gitPanelWidth: w }),
 
   // ── Terminal height ───────────────────────────────────────────────────
-  terminalHeight:    260,
-  setTerminalHeight: (h) => set({ terminalHeight: h }),
+  terminalHeight: (() => {
+  const saved = Number(localStorage.getItem("nova-terminal-height"));
+
+  if (Number.isFinite(saved)) {
+    return Math.min(Math.max(saved, 160), 600);
+  }
+
+  return 260;
+})(),
+
+setTerminalHeight: (h) => {
+  const clamped = Math.min(Math.max(h, 160), 600);
+
+  localStorage.setItem(
+    "nova-terminal-height",
+    String(clamped)
+  );
+
+  set({ terminalHeight: clamped });
+},
 
   // ── Cursor position ───────────────────────────────────────────────────
   cursorLine: 1,
