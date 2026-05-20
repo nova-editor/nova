@@ -140,16 +140,66 @@ interface GitState {
   branches: GitBranchInfo[];
 }
 
+export interface TerminalSession {
+  id:       string;
+  shell:    string;
+  label:    string;
+  title:    string;
+  cwd:      string;
+  exitCode: number | null;
+}
+
+export interface EditorSnapshot {
+  cursor:     number;
+  anchor:     number;
+  head:       number;
+  scrollTop:  number;
+  scrollLeft: number;
+}
+
+export interface WorkspaceSession {
+  version:      number;
+  workspaceRoot: string;
+  savedAt:      number;
+  leftPane:     PaneState;
+  rightPane:    PaneState | null;
+  focusedPane:  "left" | "right";
+  splitRatio:   number;
+  showFileTree: boolean;
+  showTerminal: boolean;
+  showGitPanel: boolean;
+  gitPanelWidth: number;
+  terminalHeight: number;
+  cursorPositions: Record<string, number>;
+  editorStates: Record<string, EditorSnapshot>;
+  drafts: Record<string, string>;
+  terminalSessions: TerminalSession[];
+  terminalMainActiveId: string;
+  terminalSplitId: string | null;
+  terminalSplitFocused: boolean;
+}
+
+export interface RecentWorkspace {
+  path:     string;
+  name:     string;
+  lastOpened: number;
+}
+
 interface AppState {
   // ── Workspace ───────────────────────────────────────────────────────────
   workspaceRoot:    string;
   setWorkspaceRoot: (root: string) => void;
   initCwd:          (root: string) => void;
+  recentWorkspaces: RecentWorkspace[];
+  restoreLastWorkspace: () => Promise<void>;
+  restoreWorkspace: (root: string) => Promise<void>;
 
   // ── Two-pane model ───────────────────────────────────────────────────────
   leftPane:     PaneState;
   rightPane:    PaneState | null;
   focusedPane:  "left" | "right";
+  splitRatio:   number;
+  setSplitRatio: (ratio: number) => void;
 
   openFile:          (path: string) => Promise<void>;
   openAiTab:         (provider: AiProvider) => void;
@@ -255,8 +305,20 @@ interface AppState {
   // ── Cursor position (for status bar LOC) ─────────────────────────────────
   cursorLine: number;
   cursorCol:  number;
-  setCursor:  (line: number, col: number) => void;
+  setCursor:  (line: number, col: number, head?: number, path?: string) => void;
 
+  // ── Workspace Session Persistence ───────────────────────────────────────
+  cursorPositions: Record<string, number>;
+  editorStates: Record<string, EditorSnapshot>;
+  setEditorState: (path: string, snapshot: EditorSnapshot) => void;
+  terminalSessions: TerminalSession[];
+  terminalMainActiveId: string;
+  terminalSplitId: string | null;
+  terminalSplitFocused: boolean;
+  setTerminalState: (state: { sessions: TerminalSession[], mainActiveId: string, splitId: string | null, splitFocused: boolean }) => void;
+  saveWorkspaceSession: () => void;
+  loadWorkspaceSession: () => Promise<void>;
+  isRestoringSession: boolean;
 }
 
 function detectLanguage(path: string): string {
@@ -283,6 +345,46 @@ export const tabContentMap = new Map<string, string>();
 // ── Autosave timers keyed by file path ───────────────────────────────────────
 const _autosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+const SESSION_VERSION = 2;
+const LAST_WORKSPACE_KEY = "nova-last-workspace";
+const RECENT_WORKSPACES_KEY = "nova-recent-workspaces";
+
+function sessionKey(root: string) {
+  return `nova-session-${root}`;
+}
+
+function isDiskBackedTab(tab: FileTab): boolean {
+  return !tab.kind || tab.kind === "file" || tab.kind === "notebook-viewer";
+}
+
+function tabName(path: string): string {
+  return path.replace(/\\/g, "/").split("/").pop() ?? path;
+}
+
+function clampActiveIdx(pane: PaneState): PaneState {
+  const tabs = Array.isArray(pane.tabs) ? pane.tabs : [];
+  return { tabs, activeIdx: Math.max(0, Math.min(pane.activeIdx ?? 0, Math.max(0, tabs.length - 1))) };
+}
+
+function loadRecentWorkspaces(): RecentWorkspace[] {
+  try {
+    const raw = localStorage.getItem(RECENT_WORKSPACES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((w) => typeof w?.path === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberWorkspace(root: string): RecentWorkspace[] {
+  const entry: RecentWorkspace = { path: root, name: tabName(root), lastOpened: Date.now() };
+  const next = [entry, ...loadRecentWorkspaces().filter((w) => w.path !== root)].slice(0, 12);
+  localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(next));
+  localStorage.setItem(LAST_WORKSPACE_KEY, root);
+  localStorage.setItem("nova-workspace", root);
+  return next;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getFocusedPane(s: Pick<AppState, "focusedPane" | "leftPane" | "rightPane">): {
   pane: PaneState;
@@ -296,9 +398,9 @@ function getFocusedPane(s: Pick<AppState, "focusedPane" | "leftPane" | "rightPan
 
 export const useStore = create<AppState>((set, get) => ({
   // ── Workspace ─────────────────────────────────────────────────────────
-  workspaceRoot: localStorage.getItem("nova-workspace") ?? "",
+  workspaceRoot: "",
   setWorkspaceRoot: (root) => {
-    localStorage.setItem("nova-workspace", root);
+    const recentWorkspaces = rememberWorkspace(root);
     set({
       workspaceRoot: root,
       leftPane:      { tabs: [], activeIdx: 0 },
@@ -306,19 +408,50 @@ export const useStore = create<AppState>((set, get) => ({
       focusedPane:   "left",
       expandedDirs:  new Set(),
       showFileTree:  true,
+      editorStates:  {},
+      cursorPositions: {},
+      recentWorkspaces,
     });
     get().refreshGit();
   },
   initCwd: (root) => {
-    // Only fall back to process cwd if no workspace was saved
-    if (!get().workspaceRoot) set({ workspaceRoot: root });
+    // Kept as a lightweight cwd probe for terminals; workspace restore is explicit.
+    void root;
+  },
+
+  recentWorkspaces: loadRecentWorkspaces(),
+
+  restoreLastWorkspace: async () => {
+    const root = localStorage.getItem(LAST_WORKSPACE_KEY) ?? localStorage.getItem("nova-workspace");
+    if (!root) return;
+    await get().restoreWorkspace(root);
+  },
+
+  restoreWorkspace: async (root) => {
+    try {
+      const exists = await invoke<boolean>("file_exists", { path: root });
+      if (!exists) {
+        localStorage.removeItem(LAST_WORKSPACE_KEY);
+        set((s) => ({
+          recentWorkspaces: s.recentWorkspaces.filter((w) => w.path !== root),
+          statusMsg: "Previous workspace is no longer available",
+        }));
+        localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify(get().recentWorkspaces));
+        return;
+      }
+      get().setWorkspaceRoot(root);
+    } catch {
+      get().setStatus("Could not restore previous workspace");
+    }
   },
 
   // ── Two-pane model ────────────────────────────────────────────────────
   leftPane:    { tabs: [], activeIdx: 0 },
   rightPane:   null,
   focusedPane: "left",
+  splitRatio:  0.5,
 
+  setSplitRatio: (ratio) => set({ splitRatio: ratio }),
   setFocusedPane: (pane) => set({ focusedPane: pane }),
 
   setActiveTab: (idx, pane) => set((s) => {
@@ -858,7 +991,156 @@ export const useStore = create<AppState>((set, get) => ({
   // ── Cursor position ───────────────────────────────────────────────────
   cursorLine: 1,
   cursorCol:  1,
-  setCursor:  (line, col) => set({ cursorLine: line, cursorCol: col }),
+  setCursor:  (line, col, head, path) => set((s) => {
+    if (head !== undefined && path) {
+      const nextPos = { ...s.cursorPositions, [path]: head };
+      return { cursorLine: line, cursorCol: col, cursorPositions: nextPos };
+    }
+    return { cursorLine: line, cursorCol: col };
+  }),
+
+  // ── Workspace Session Persistence ───────────────────────────────────────
+  cursorPositions: {},
+  editorStates: {},
+  terminalSessions: [],
+  terminalMainActiveId: "",
+  terminalSplitId: null,
+  terminalSplitFocused: false,
+  isRestoringSession: false,
+
+  setEditorState: (path, snapshot) => set((s) => ({
+    editorStates: {
+      ...s.editorStates,
+      [path]: snapshot,
+    },
+    cursorPositions: {
+      ...s.cursorPositions,
+      [path]: snapshot.cursor,
+    },
+  })),
+
+  setTerminalState: (state) => set({
+    terminalSessions: state.sessions,
+    terminalMainActiveId: state.mainActiveId,
+    terminalSplitId: state.splitId,
+    terminalSplitFocused: state.splitFocused
+  }),
+
+  saveWorkspaceSession: () => {
+    const s = get();
+    if (!s.workspaceRoot) return;
+    const allTabs = [...s.leftPane.tabs, ...(s.rightPane?.tabs ?? [])];
+    const drafts: Record<string, string> = {};
+    for (const tab of allTabs) {
+      if (tab.dirty && isDiskBackedTab(tab)) {
+        const content = tabContentMap.get(tab.path);
+        if (content !== undefined) drafts[tab.path] = content;
+      }
+    }
+    const session: WorkspaceSession = {
+      version: SESSION_VERSION,
+      workspaceRoot: s.workspaceRoot,
+      savedAt: Date.now(),
+      leftPane: s.leftPane,
+      rightPane: s.rightPane,
+      focusedPane: s.focusedPane,
+      splitRatio: s.splitRatio,
+      showFileTree: s.showFileTree,
+      showTerminal: s.showTerminal,
+      showGitPanel: s.showGitPanel,
+      gitPanelWidth: s.gitPanelWidth,
+      terminalHeight: s.terminalHeight,
+      cursorPositions: s.cursorPositions,
+      editorStates: s.editorStates,
+      drafts,
+      terminalSessions: s.terminalSessions,
+      terminalMainActiveId: s.terminalMainActiveId,
+      terminalSplitId: s.terminalSplitId,
+      terminalSplitFocused: s.terminalSplitFocused,
+    };
+    localStorage.setItem(sessionKey(s.workspaceRoot), JSON.stringify(session));
+  },
+
+  loadWorkspaceSession: async () => {
+    const s = get();
+    if (!s.workspaceRoot) return;
+    set({ isRestoringSession: true });
+    try {
+      const raw = localStorage.getItem(sessionKey(s.workspaceRoot));
+      if (raw) {
+        const parsed = JSON.parse(raw) as WorkspaceSession;
+        const restorePane = async (pane?: PaneState | null): Promise<PaneState> => {
+          if (!pane) return { tabs: [], activeIdx: 0 };
+          const tabs: FileTab[] = [];
+          for (const tab of pane.tabs ?? []) {
+            if (isDiskBackedTab(tab)) {
+              const draft = parsed.drafts?.[tab.path];
+              try {
+                const content = draft ?? await invoke<string>("read_file", { path: tab.path });
+                tabContentMap.set(tab.path, content);
+                tabs.push({ ...tab, dirty: draft !== undefined ? true : false });
+              } catch {
+                // Deleted or unreadable files are ignored during recovery.
+              }
+            } else if (tab.kind === "md-preview") {
+              const sourcePath = tab.path.replace(MD_PREVIEW_PREFIX, "");
+              if (tabContentMap.has(sourcePath)) tabs.push(tab);
+            } else {
+              tabs.push(tab);
+            }
+          }
+          return clampActiveIdx({ tabs, activeIdx: pane.activeIdx ?? 0 });
+        };
+
+        const leftPane = await restorePane(parsed.leftPane);
+        const rightPane = parsed.rightPane ? await restorePane(parsed.rightPane) : null;
+        const filteredEditorStates = Object.fromEntries(
+          Object.entries(parsed.editorStates ?? {}).filter(([path]) => tabContentMap.has(path))
+        );
+        const validTermSessions = (parsed.terminalSessions ?? []).filter((session) => session?.id && session?.shell);
+        const terminalMainActiveId = validTermSessions.some((term) => term.id === parsed.terminalMainActiveId)
+          ? parsed.terminalMainActiveId
+          : validTermSessions[0]?.id ?? "";
+        const terminalSplitId = validTermSessions.some((term) => term.id === parsed.terminalSplitId)
+          ? parsed.terminalSplitId
+          : null;
+
+        const restoredRightPane = rightPane && rightPane.tabs.length > 0 ? rightPane : null;
+        set({
+          leftPane,
+          rightPane: restoredRightPane,
+          focusedPane: parsed.focusedPane === "right" && restoredRightPane ? "right" : "left",
+          splitRatio: parsed.splitRatio ?? 0.5,
+          showFileTree: parsed.showFileTree ?? true,
+          showTerminal: parsed.showTerminal ?? false,
+          showGitPanel: parsed.showGitPanel ?? false,
+          gitPanelWidth: parsed.gitPanelWidth ?? 280,
+          terminalHeight: parsed.terminalHeight ?? 260,
+          cursorPositions: parsed.cursorPositions ?? {},
+          editorStates: filteredEditorStates,
+          terminalSessions: validTermSessions,
+          terminalMainActiveId,
+          terminalSplitId,
+          terminalSplitFocused: parsed.terminalSplitFocused ?? false,
+        });
+        get().setStatus("Restored previous session");
+      } else {
+        set({
+          terminalSessions: [],
+          terminalMainActiveId: "",
+          terminalSplitId: null,
+          terminalSplitFocused: false,
+          editorStates: {},
+          cursorPositions: {},
+        });
+      }
+    } catch {
+      localStorage.removeItem(sessionKey(s.workspaceRoot));
+      get().setStatus("Session data was corrupted and has been reset");
+    } finally {
+      set({ isRestoringSession: false });
+    }
+  },
 
   // ── Presets ───────────────────────────────────────────────────────────
   presets: (() => {
