@@ -97,14 +97,17 @@ export default function App() {
   const bg                = useStore((s) => s.settings.background);
   const setSplitRatio     = useStore((s) => s.setSplitRatio);
   const loadWorkspaceSession = useStore((s) => s.loadWorkspaceSession);
+  const restoreLastWorkspace = useStore((s) => s.restoreLastWorkspace);
+  const restoreWorkspace     = useStore((s) => s.restoreWorkspace);
+  const recentWorkspaces     = useStore((s) => s.recentWorkspaces);
 
   // Auto-save workspace session on any state change (debounced)
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
     const unsub = useStore.subscribe((state, prevState) => {
       // Don't save if workspaceRoot is empty
-      if (!state.workspaceRoot) return;
       clearTimeout(timeout);
+      if (!state.workspaceRoot || state.isRestoringSession) return;
       timeout = setTimeout(() => {
         useStore.getState().saveWorkspaceSession();
       }, 1000);
@@ -135,9 +138,9 @@ export default function App() {
   // Open folder passed as CLI argument: `nova /path/to/folder`
   useEffect(() => {
     invoke<string | null>("get_startup_path")
-      .then((path) => { if (path) setWorkspaceRoot(path); })
+      .then((path) => { if (path) setWorkspaceRoot(path); else restoreLastWorkspace(); })
       .catch(() => {});
-  }, [setWorkspaceRoot]);
+  }, [setWorkspaceRoot, restoreLastWorkspace]);
 
   const openFileDialog = async () => {
     try {
@@ -524,6 +527,7 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
                       {([
                         { icon: <FolderOpen size={13} />, label: "Open Folder", kbd: "⌘⇧O", onClick: openFolder },
                         { icon: <FilePlus   size={13} />, label: "Open File",   kbd: "⌘O",   onClick: openFileDialog },
+                        { icon: <BookOpen   size={13} />, label: "Restore Previous Session", kbd: "", onClick: restoreLastWorkspace },
                       ] as const).map(({ icon, label, kbd, onClick }) => (
                         <button
                           key={label}
@@ -535,9 +539,26 @@ if (ctrl && e.shiftKey && (e.key === "C" || e.key === "c")) { e.preventDefault()
                         >
                           {icon}
                           <span>{label}</span>
-                          <span style={{ marginLeft: 6, color: "rgb(var(--c-border))", fontSize: 10 }}>{kbd}</span>
+                          {kbd && <span style={{ marginLeft: 6, color: "rgb(var(--c-border))", fontSize: 10 }}>{kbd}</span>}
                         </button>
                       ))}
+                      {recentWorkspaces.length > 0 && (
+                        <div className="mt-5 flex flex-col items-stretch gap-1 min-w-64 max-w-96">
+                          <div className="px-3 text-2xs font-mono uppercase" style={{ color: "rgb(var(--c-comment))" }}>Recent workspaces</div>
+                          {recentWorkspaces.slice(0, 5).map((workspace) => (
+                            <button
+                              key={workspace.path}
+                              onClick={() => restoreWorkspace(workspace.path)}
+                              title={workspace.path}
+                              className="flex flex-col items-start px-3 py-1.5 rounded transition-colors hover:bg-white/5"
+                              style={{ color: "rgb(var(--c-gutter))", fontSize: 12, fontFamily: "'JetBrains Mono', monospace" }}
+                            >
+                              <span className="truncate w-full text-left" style={{ color: "rgb(var(--c-fg))" }}>{workspace.name}</span>
+                              <span className="truncate w-full text-left text-2xs">{workspace.path}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )

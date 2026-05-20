@@ -129,22 +129,22 @@ export function Editor({ tab }: EditorProps) {
   const markDirty  = useStore((s) => s.markDirty);
   const saveTab    = useStore((s) => s.saveTab);
   const setVimMode = useStore((s) => s.setVimMode);
+  const setEditorState = useStore((s) => s.setEditorState);
   const s          = useStore((s) => s.settings.editor);
 
   // Stable refs — listeners registered once always call the latest callback
   const markDirtyRef  = useRef(markDirty);
   const saveTabRef    = useRef(saveTab);
   const setVimModeRef = useRef(setVimMode);
+  const setEditorStateRef = useRef(setEditorState);
   const tabPathRef    = useRef(tab.path);
   const tabLangRef    = useRef(tab.language);
   useEffect(() => { markDirtyRef.current  = markDirty;    }, [markDirty]);
   useEffect(() => { saveTabRef.current    = saveTab;      }, [saveTab]);
   useEffect(() => { setVimModeRef.current = setVimMode;   }, [setVimMode]);
+  useEffect(() => { setEditorStateRef.current = setEditorState; }, [setEditorState]);
   useEffect(() => { tabPathRef.current    = tab.path;     }, [tab.path]);
   useEffect(() => { tabLangRef.current    = tab.language; }, [tab.language]);
-
-  const initialCursorOffset = useRef(useStore.getState().cursorPositions[tab.path]);
-
 
   // ── Create/destroy the view — ONLY when switching files ──────────────────
   // Settings changes are handled by compartment reconfigure effects below.
@@ -152,6 +152,8 @@ export function Editor({ tab }: EditorProps) {
   useEffect(() => {
     if (!containerRef.current) return;
     let langCancelled = false;
+    const initialCursorOffset = useStore.getState().cursorPositions[tab.path];
+    const initialEditorState = useStore.getState().editorStates[tab.path];
 
     const view = new EditorView({
       state: EditorState.create({
@@ -170,6 +172,17 @@ export function Editor({ tab }: EditorProps) {
           cTheme.of(getTheme(s.theme)),
           cIndentLines.of(s.indentLines ? indentationMarkers({ markerType: "fullScope", thickness: 1 }) : []),
           EditorView.domEventHandlers({
+            scroll(_e, view) {
+              const head = view.state.selection.main.head;
+              const anchor = view.state.selection.main.anchor;
+              setEditorStateRef.current(tabPathRef.current, {
+                cursor: head,
+                anchor,
+                head,
+                scrollTop: view.scrollDOM.scrollTop,
+                scrollLeft: view.scrollDOM.scrollLeft,
+              });
+            },
             keydown(e) {
               if ((e.ctrlKey || e.metaKey) && e.key === "s") {
                 e.preventDefault();
@@ -191,8 +204,16 @@ export function Editor({ tab }: EditorProps) {
             // Update cursor position on any selection or doc change
             if (update.docChanged || update.selectionSet) {
               const head = update.state.selection.main.head;
+              const anchor = update.state.selection.main.anchor;
               const line = update.state.doc.lineAt(head);
               useStore.getState().setCursor(line.number, head - line.from + 1, head, tabPathRef.current);
+              setEditorStateRef.current(tabPathRef.current, {
+                cursor: head,
+                anchor,
+                head,
+                scrollTop: update.view.scrollDOM.scrollTop,
+                scrollLeft: update.view.scrollDOM.scrollLeft,
+              });
             }
             if (!update.docChanged) return;
             const content = update.state.doc.toString();
@@ -212,12 +233,20 @@ export function Editor({ tab }: EditorProps) {
     viewRef.current = view;
     view.focus();
 
-    if (initialCursorOffset.current !== undefined) {
-      const offset = Math.min(initialCursorOffset.current, view.state.doc.length);
+    const restored = initialEditorState;
+    if (restored !== undefined || initialCursorOffset !== undefined) {
+      const anchor = Math.min(restored?.anchor ?? initialCursorOffset ?? 0, view.state.doc.length);
+      const head = Math.min(restored?.head ?? initialCursorOffset ?? 0, view.state.doc.length);
       view.dispatch({
-        selection: { anchor: offset, head: offset },
+        selection: { anchor, head },
         scrollIntoView: true,
       });
+      if (restored) {
+        requestAnimationFrame(() => {
+          view.scrollDOM.scrollTop = restored.scrollTop;
+          view.scrollDOM.scrollLeft = restored.scrollLeft;
+        });
+      }
     }
 
     // Load language parser without blocking the editor opening
