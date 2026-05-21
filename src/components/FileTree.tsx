@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import {
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, ChevronsUp,
   FilePlus, FolderPlus, Pencil, Trash2, Copy, FileStack, Clipboard, Search, X,
 } from "lucide-react";
 import { invoke }      from "@tauri-apps/api/core";
@@ -272,7 +272,7 @@ const TreeNode = memo(function TreeNode({
             <span className="text-editor-comment shrink-0 flex items-center" style={{ width: 14 }}>
               {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             </span>
-            <FolderIcon name={entry.name} open={expanded} size={16} />
+            <FolderIcon name={entry.name} size={16} open={expanded} />
             {isRenaming ? (
               <input
                 ref={renameRef}
@@ -348,6 +348,7 @@ export function FileTree() {
   const setStatus      = useStore((s) => s.setStatus);
   const showFileTree   = useStore((s) => s.showFileTree);
   const toggleFileTree = useStore((s) => s.toggleFileTree);
+  const collapseAll    = useStore((s) => s.collapseAll);
   const sidebarWidth   = useStore((s) => s.settings.sidebarWidth);
   const updateSettings = useStore((s) => s.updateSettings);
 
@@ -556,6 +557,13 @@ export function FileTree() {
             className="flex items-center justify-center w-6 h-6 rounded text-editor-comment hover:text-editor-fg hover:bg-white/[0.08] transition-colors"
           >
             <FolderPlus size={13} />
+          </button>
+          <button
+            onClick={() => collapseAll()}
+            title="Collapse All"
+            className="flex items-center justify-center w-6 h-6 rounded text-editor-comment hover:text-editor-fg hover:bg-white/[0.08] transition-colors"
+          >
+            <ChevronsUp size={14} />
           </button>
         </div>
       </div>
