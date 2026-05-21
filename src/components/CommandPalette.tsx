@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus } from "lucide-react";
+import { Terminal, GitBranch, FolderOpen, Save, X, Search, FilePlus, FolderPlus, ChevronsUp } from "lucide-react";
 import { useStore } from "../store";
 
 interface Command {
@@ -22,6 +22,7 @@ export function CommandPalette() {
   const toggleGitPanel = useStore((s) => s.toggleGitPanel);
   const saveTab        = useStore((s) => s.saveTab);
   const showFileTree   = useStore((s) => s.showFileTree);
+  const collapseAll    = useStore((s) => s.collapseAll);
 
   const commands: Command[] = [
     {
@@ -48,6 +49,12 @@ export function CommandPalette() {
       description: "Show or hide the file tree panel",
       icon: <FolderOpen size={14} />,
       action: () => { toggleFileTree(); setOpen(false); },
+    },
+    {
+      id: "collapse_all", label: "Collapse All Folders",
+      description: "Collapse all expanded directories in the file tree",
+      icon: <ChevronsUp size={14} />,
+      action: () => { collapseAll(); setOpen(false); },
     },
     {
       id: "toggle_terminal", label: "Toggle Terminal",

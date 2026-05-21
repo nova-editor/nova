@@ -5,3 +5,22 @@ Cargo.lock
 
 # Vercel build output
 .vercel
+
+# Node modules
+node_modules/
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Tauri build output
+src-tauri/target/
+src-tauri/gen/schemas/*.json
+!src-tauri/gen/schemas/acl-manifests.json
+!src-tauri/gen/schemas/capabilities.json
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store

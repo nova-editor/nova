@@ -184,6 +184,7 @@ interface AppState {
   // ── File tree ───────────────────────────────────────────────────────────
   expandedDirs: Set<string>;
   toggleDir:    (path: string) => void;
+  collapseAll:  () => void;
 
   // ── Git ─────────────────────────────────────────────────────────────────
   gitBranch:     string;
@@ -722,6 +723,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (next.has(path)) next.delete(path); else next.add(path);
     return { expandedDirs: next };
   }),
+  collapseAll: () => set({ expandedDirs: new Set() }),
 
   // ── Git ───────────────────────────────────────────────────────────────
   gitBranch:   "",
